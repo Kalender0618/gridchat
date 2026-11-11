@@ -406,11 +406,51 @@ io.on('connection', async socket => {
     io.to(to).emit('webrtc:signal', { from: socket.id, data });
   });
 
+  // ---------- Sesli arama odası (sohbet başına) ----------
+  socket.on('call:join', async convId => {
+    try {
+      if (!UUID_RE.test(convId || '') || !(await isMember(convId, socket.user.id))) return;
+      if (socket.callConv) leaveCall(socket);
+      const room = callRooms.get(convId) || new Map();
+      callRooms.set(convId, room);
+      const peers = [...room].map(([id, name]) => ({ socketId: id, username: name }));
+      room.set(socket.id, socket.user.username);
+      socket.callConv = convId;
+      socket.emit('call:peers', peers);
+      peers.forEach(p => io.to(p.socketId).emit('call:peer-joined', { socketId: socket.id, username: socket.user.username }));
+    } catch (err) {
+      console.error(err);
+    }
+  });
+
+  socket.on('call:leave', () => leaveCall(socket));
+
+  // Ses sinyalleri yalnızca aynı çağrı odasındaki kişiye iletilir
+  socket.on('call:signal', ({ to, data }) => {
+    const target = io.sockets.sockets.get(to);
+    if (!target || !socket.callConv || target.callConv !== socket.callConv) return;
+    io.to(to).emit('call:signal', { from: socket.id, data });
+  });
+
   socket.on('disconnect', () => {
+    leaveCall(socket);
     stopSharing(socket);
     io.emit('presence', io.engine.clientsCount);
   });
 });
+
+const callRooms = new Map();
+function leaveCall(socket) {
+  const convId = socket.callConv;
+  if (!convId) return;
+  socket.callConv = null;
+  const room = callRooms.get(convId);
+  if (room) {
+    room.delete(socket.id);
+    if (!room.size) callRooms.delete(convId);
+  }
+  io.to('conv:' + convId).emit('call:peer-left', { socketId: socket.id });
+}
 
 function stopSharing(socket) {
   if (!sharers.has(socket.id)) return;
