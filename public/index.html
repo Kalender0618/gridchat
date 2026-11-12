@@ -64,6 +64,8 @@
   .me { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .side-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:4px 12px 12px; }
   .side-actions button { padding:10px; font-size:14px; }
+  .notification-action { padding:0 12px 10px; }
+  .notification-action button { width:100%; padding:9px 10px; font-size:13px; }
   .search { padding:0 12px 10px; }
   #convList { flex:1; overflow-y:auto; padding:4px 8px 8px; }
   .conv { display:flex; align-items:center; gap:12px; padding:10px; border-radius:14px; cursor:pointer; margin-bottom:2px; transition:background .15s; }
@@ -193,6 +195,9 @@
     <div class="side-actions">
       <button onclick="openDirectModal()">+ Birebir</button>
       <button class="ghost" onclick="openGroupModal()">+ Grup</button>
+    </div>
+    <div class="notification-action">
+      <button class="ghost" id="notificationBtn" onclick="enableNotifications()">🔔 Bildirimleri aç</button>
     </div>
     <div id="convList"></div>
     <div class="side-footer">
@@ -328,6 +333,7 @@ let current = null;
 let conversations = [];
 let pendingImage = null;
 let groupPick = [];
+let notificationTitle = document.title;
 
 // ---------- Tema ----------
 function setTheme(t) {
@@ -397,9 +403,75 @@ function start(user) {
   $('auth').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('whoami').textContent = '@' + user.username;
+  updateNotificationButton();
   if (user.is_admin) $('adminBtn').style.display = '';
   connectSocket();
   loadConversations();
+}
+
+function updateNotificationButton() {
+  const btn = $('notificationBtn');
+  if (!btn) return;
+  if (!('Notification' in window)) {
+    btn.textContent = 'Bildirim desteklenmiyor';
+    btn.disabled = true;
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    btn.textContent = '🔔 Bildirimler açık';
+    btn.disabled = true;
+  } else if (Notification.permission === 'denied') {
+    btn.textContent = 'Bildirim izni tarayıcıda kapalı';
+    btn.disabled = true;
+    btn.title = 'Bildirimleri tarayıcı ayarlarından açabilirsiniz.';
+  }
+}
+
+async function enableNotifications() {
+  if (!('Notification' in window)) return;
+  try {
+    const permission = await Notification.requestPermission();
+    updateNotificationButton();
+    if (permission === 'granted') {
+      const registration = await navigator.serviceWorker?.ready;
+      if (registration) {
+        registration.showNotification('GridChat bildirimleri açık', {
+          body: 'Yeni mesajlar geldiğinde burada bildirim göreceksiniz.',
+          icon: '/icon-192.png',
+          tag: 'gridchat-notifications-enabled'
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Bildirim izni alınamadı:', err);
+  }
+}
+
+async function notifyIncomingMessage(m) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const isViewingMessage = current && current.id === m.conversationId && !document.hidden && document.hasFocus();
+  if (isViewingMessage) return;
+  const conv = conversations.find(c => c.id === m.conversationId);
+  const title = conv ? `${m.from} · ${conv.title}` : `@${m.from} · GridChat`;
+  const body = m.text || (m.image ? 'Fotoğraf gönderdi' : 'Yeni mesaj gönderdi');
+  try {
+    const registration = await navigator.serviceWorker?.ready;
+    if (registration) {
+      await registration.showNotification(title, {
+        body,
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
+        tag: `gridchat-${m.conversationId}`,
+        data: { conversationId: m.conversationId }
+      });
+    } else {
+      const notification = new Notification(title, { body, icon: '/icon-192.png', tag: `gridchat-${m.conversationId}` });
+      notification.onclick = () => { window.focus(); notification.close(); };
+    }
+    if (document.hidden) document.title = `(${1}) ${notificationTitle}`;
+  } catch (err) {
+    console.error('Bildirim gösterilemedi:', err);
+  }
 }
 
 // ---------- Sohbet listesi ----------
@@ -484,6 +556,7 @@ function connectSocket() {
   socket = io({ auth: { token } });
   socket.on('connect_error', () => logout());
   socket.on('message', m => {
+    if (me && m.userId !== me.id) notifyIncomingMessage(m);
     if (current && m.conversationId === current.id) {
       if ($('messages').querySelector('.empty')) $('messages').innerHTML = '';
       appendMessage(m);
@@ -1152,6 +1225,9 @@ $('installBtn').addEventListener('click', async () => {
 });
 window.addEventListener('appinstalled', () => { $('installBtn').style.display = 'none'; });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) document.title = notificationTitle;
+});
 </script>
 </body>
 </html>

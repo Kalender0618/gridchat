@@ -1,4 +1,4 @@
-const CACHE = 'gridchat-v1';
+const CACHE = 'gridchat-v2';
 const SHELL = ['/', '/index.html', '/icon.svg', '/manifest.json'];
 
 self.addEventListener('install', event => {
@@ -32,4 +32,15 @@ self.addEventListener('fetch', event => {
       })
       .catch(() => caches.match(req))
   );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of windows) {
+      if ('focus' in client) return client.focus();
+    }
+    return self.clients.openWindow('/');
+  })());
 });
