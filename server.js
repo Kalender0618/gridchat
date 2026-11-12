@@ -138,7 +138,7 @@ app.use(helmet({
       scriptSrcAttr: ["'unsafe-inline'"], // Keep the current onclick/onchange controls working under Helmet's default CSP.
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:', new URL(SB_URL).origin],
-      connectSrc: ["'self'", new URL(SB_URL).origin],
+      connectSrc: ["'self'", 'wss:', new URL(SB_URL).origin],
       mediaSrc: ["'self'", 'blob:'],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
@@ -686,6 +686,9 @@ const server = http.createServer(app);
 const io = new Server(server, {
   maxHttpBufferSize: 1e6,
   allowRequest: (req, callback) => {
+    if (!req.headers.origin) {
+      return callback(null, !!cookieValue(req, 'gridchat_session'));
+    }
     try {
       const origin = new URL(req.headers.origin || '');
       callback(null, origin.host === req.headers.host && ['http:', 'https:'].includes(origin.protocol));

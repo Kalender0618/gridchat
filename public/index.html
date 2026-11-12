@@ -981,14 +981,22 @@ async function onPhotoPicked(e) {
 function sendMessage(e) {
   e.preventDefault();
   if (!current) return;
+  if (!socket?.connected) { alert('Sohbet bağlantısı kesilmiş. Yeniden bağlanınca tekrar gönder.'); return; }
   const text = $('text').value.trim();
   if (!text && !pendingImage) return;
-  socket.emit('message', { conversationId: current.id, text, image: pendingImage }, res => {
-    if (res && res.error) alert(res.error);
+  const conversationId = current.id;
+  const image = pendingImage;
+  $('sendBtn').disabled = true;
+  socket.timeout(10000).emit('message', { conversationId, text, image }, (err, res) => {
+    $('sendBtn').disabled = !current;
+    if (err) { alert('Mesaj sunucuya ulaşmadı. Bağlantını kontrol edip tekrar dene.'); return; }
+    if (res && res.error) { alert(res.error); return; }
+    if (current?.id === conversationId && $('text').value.trim() === text) $('text').value = '';
+    if (current?.id === conversationId && pendingImage === image) {
+      pendingImage = null;
+      $('preview').classList.add('hidden');
+    }
   });
-  $('text').value = '';
-  pendingImage = null;
-  $('preview').classList.add('hidden');
 }
 
 // ---------- Birebir ----------
