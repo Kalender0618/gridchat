@@ -398,6 +398,7 @@ let profilePhotoDraft = null;
 let manageMemberTimer = null;
 const NOTIFIED_MESSAGES_KEY = 'gridchat_notified_messages';
 let pendingNotificationCount = 0;
+let pushEnabledThisDevice = false;
 
 // ---------- Tema ----------
 function setTheme(t) {
@@ -457,6 +458,12 @@ async function submitAuth() {
 }
 async function logout() {
   if (callConv) leaveVoice();
+  try {
+    const subscription = await (await navigator.serviceWorker?.ready)?.pushManager?.getSubscription();
+    if (subscription) {
+      await api('/api/push/subscription', { method: 'DELETE', body: JSON.stringify({ endpoint: subscription.endpoint }) });
+    }
+  } catch (e) { console.warn('Push aboneliği kapatılamadı:', e.message); }
   try { await api('/api/logout', { method: 'POST' }); } catch (e) {}
   location.reload();
 }
@@ -467,6 +474,7 @@ function start(user) {
   me = { ...user };
   updateMyAvatar();
   updateNotificationButton();
+  void restorePushSubscription();
   if (user.is_admin) $('adminBtn').style.display = '';
   connectSocket();
   loadConversations();
@@ -556,13 +564,44 @@ function updateNotificationButton() {
     btn.disabled = true;
     return;
   }
-  if (Notification.permission === 'granted') {
-    btn.textContent = '🔔 Bildirimler açık';
-    btn.disabled = true;
-  } else if (Notification.permission === 'denied') {
+  if (Notification.permission === 'denied') {
     btn.textContent = 'Bildirim izni tarayıcıda kapalı';
     btn.disabled = true;
     btn.title = 'Bildirimleri tarayıcı ayarlarından açabilirsiniz.';
+  } else if (pushEnabledThisDevice) {
+    btn.textContent = '🔔 Bu cihazda push açık';
+    btn.disabled = true;
+  } else if (Notification.permission === 'granted') {
+    btn.textContent = '🔔 Bu cihazda push bildirimini kur';
+    btn.disabled = false;
+  } else {
+    btn.textContent = '🔔 Bildirimleri aç';
+    btn.disabled = false;
+  }
+}
+
+function base64UrlToBytes(value) {
+  const padded = value + '='.repeat((4 - value.length % 4) % 4);
+  const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+
+async function savePushSubscription(registration, subscription) {
+  await api('/api/push/subscription', {
+    method: 'POST', body: JSON.stringify({ subscription: subscription.toJSON() })
+  });
+  pushEnabledThisDevice = true;
+  updateNotificationButton();
+}
+
+async function restorePushSubscription() {
+  try {
+    if (!('serviceWorker' in navigator) || Notification.permission !== 'granted') return;
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager?.getSubscription();
+    if (subscription) await savePushSubscription(registration, subscription);
+  } catch (err) {
+    console.warn('Bu cihazın push aboneliği eşitlenemedi:', err.message);
   }
 }
 
@@ -573,16 +612,20 @@ async function enableNotifications() {
     updateNotificationButton();
     if (permission === 'granted') {
       const registration = await navigator.serviceWorker?.ready;
-      if (registration) {
-        registration.showNotification('GridChat bildirimleri açık', {
-          body: 'Yeni mesajlar geldiğinde burada bildirim göreceksiniz.',
-          icon: '/icon-192.png',
-          tag: 'gridchat-notifications-enabled'
-        });
-      }
+      if (!registration?.pushManager) throw new Error('Bu tarayıcı push bildirimini desteklemiyor. Telefonda GridChat’i ana ekrana ekleyip tekrar deneyin.');
+      const { publicKey } = await api('/api/push/public-key');
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(publicKey) });
+      await savePushSubscription(registration, subscription);
+      await registration.showNotification('GridChat bildirimleri açık', {
+        body: 'Bu cihaz yeni mesajlar için push bildirimi alacak.', icon: '/icon-192.png', tag: 'gridchat-notifications-enabled'
+      });
+    } else if (permission !== 'denied') {
+      throw new Error('Bildirim izni verilmedi.');
     }
   } catch (err) {
     console.error('Bildirim izni alınamadı:', err);
+    alert(err.message || 'Push bildirimi kurulamadı.');
   }
 }
 
@@ -636,7 +679,7 @@ function rememberNotifiedMessage(id) {
   localStorage.setItem(NOTIFIED_MESSAGES_KEY, JSON.stringify(ids.slice(-200)));
 }
 async function syncMissedNotifications() {
-  if (!socket?.connected || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (pushEnabledThisDevice || !socket?.connected || !('Notification' in window) || Notification.permission !== 'granted') return;
   try {
     const { messages } = await api('/api/notifications/missed');
     for (const message of messages.slice(0, 10).reverse()) await notifyIncomingMessage(message);
@@ -745,7 +788,7 @@ function connectSocket() {
   });
   socket.on('connect', syncMissedNotifications);
   socket.on('message', m => {
-    if (me && m.userId !== me.id) notifyIncomingMessage(m);
+    if (me && m.userId !== me.id && !pushEnabledThisDevice) notifyIncomingMessage(m);
     if (current && m.conversationId === current.id) {
       if ($('messages').querySelector('.empty')) $('messages').innerHTML = '';
       appendMessage(m);

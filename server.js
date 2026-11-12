@@ -7,6 +7,7 @@ const multer = require('multer');
 const { Server } = require('socket.io');
 const helmet = require('helmet');
 const { rateLimit } = require('express-rate-limit');
+const webPush = require('web-push');
 
 const PORT = process.env.PORT || 3000;
 const SB_URL = process.env.SUPABASE_URL;
@@ -14,6 +15,9 @@ const SB_KEY = process.env.SUPABASE_SERVICE_KEY;
 const MESSAGE_KEY = process.env.MESSAGE_KEY;
 const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || '';
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || '';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:admin@gridchat.com';
 
 if (!SB_URL || !SB_KEY || !MESSAGE_KEY || !/^[0-9a-f]{64}$/i.test(MESSAGE_KEY)) {
   console.error('Eksik ya da hatalÄ± ortam deÄŸiÅŸkeni: SUPABASE_URL, SUPABASE_SERVICE_KEY, MESSAGE_KEY (64 karakter onaltÄ±lÄ±k)');
@@ -24,14 +28,14 @@ const UUID_RE = /^[0-9a-f-]{36}$/i;
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 // ---------- Supabase REST ----------
-async function sb(table, { method = 'GET', query = '', body } = {}) {
+async function sb(table, { method = 'GET', query = '', body, prefer = 'return=representation' } = {}) {
   const res = await fetch(`${SB_URL}/rest/v1/${table}${query}`, {
     method,
     headers: {
       apikey: SB_KEY,
       Authorization: `Bearer ${SB_KEY}`,
       'Content-Type': 'application/json',
-      Prefer: 'return=representation'
+      Prefer: prefer
     },
     body: body ? JSON.stringify(body) : undefined
   });
@@ -128,6 +132,8 @@ async function profilesById(ids) {
 // ---------- Uygulama ----------
 fs.mkdirSync(path.join(__dirname, 'public', 'uploads'), { recursive: true });
 const app = express();
+const webPushConfigured = Boolean(VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY);
+if (webPushConfigured) webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(helmet({
@@ -207,6 +213,69 @@ async function auth(req, res, next) {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Sunucu hatasÄ±' });
+  }
+}
+
+// ---------- Telefon kapalıyken gönderilen Web Push bildirimleri ----------
+app.get('/api/push/public-key', auth, (req, res) => {
+  if (!webPushConfigured) return res.status(503).json({ error: 'Push bildirimi sunucuda yapılandırılmamış' });
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+app.post('/api/push/subscription', auth, wrap(async (req, res) => {
+  if (!webPushConfigured) return res.status(503).json({ error: 'Push bildirimi sunucuda yapılandırılmamış' });
+  const subscription = req.body?.subscription;
+  const endpoint = subscription?.endpoint;
+  const key = subscription?.keys;
+  let endpointUrl;
+  try { endpointUrl = new URL(endpoint); } catch {}
+  const host = endpointUrl?.hostname.toLowerCase() || '';
+  const trustedPushHost = host === 'fcm.googleapis.com' || host === 'android.googleapis.com' ||
+    host === 'push.services.mozilla.com' || host.endsWith('.push.services.mozilla.com') ||
+    host === 'web.push.apple.com' || host.endsWith('.notify.windows.com');
+  if (typeof endpoint !== 'string' || endpoint.length > 3000 || endpointUrl?.protocol !== 'https:' ||
+      endpointUrl.username || endpointUrl.password || (endpointUrl.port && endpointUrl.port !== '443') || !trustedPushHost ||
+      typeof key?.p256dh !== 'string' || typeof key?.auth !== 'string' || key.p256dh.length > 256 || key.auth.length > 256) {
+    return res.status(400).json({ error: 'Geçersiz bildirim aboneliği' });
+  }
+  const safeSubscription = {
+    endpoint,
+    expirationTime: subscription.expirationTime || null,
+    keys: { p256dh: key.p256dh, auth: key.auth }
+  };
+  await sb('push_subscriptions', {
+    method: 'POST', query: '?on_conflict=endpoint',
+    prefer: 'resolution=merge-duplicates,return=minimal',
+    body: { endpoint, user_id: req.user.id, subscription: safeSubscription }
+  });
+  res.json({ ok: true });
+}));
+app.delete('/api/push/subscription', auth, wrap(async (req, res) => {
+  const endpoint = req.body?.endpoint;
+  if (typeof endpoint !== 'string' || endpoint.length > 3000) return res.status(400).json({ error: 'Geçersiz bildirim aboneliği' });
+  await sb('push_subscriptions', { method: 'DELETE', query: `?user_id=eq.${req.user.id}&endpoint=eq.${encodeURIComponent(endpoint)}` });
+  res.json({ ok: true });
+}));
+
+async function pushMessageToConversation(conversationId, senderId, messageId) {
+  if (!webPushConfigured) return;
+  try {
+    const members = await sb('conversation_members', { query: `?conversation_id=eq.${conversationId}&user_id=neq.${senderId}&select=user_id` });
+    const userIds = [...new Set(members.map(m => m.user_id))];
+    if (!userIds.length) return;
+    const subscriptions = await sb('push_subscriptions', { query: `?user_id=${inList(userIds)}&select=user_id,endpoint,subscription` });
+    await Promise.all(subscriptions.map(async item => {
+      try {
+        await webPush.sendNotification(item.subscription, JSON.stringify({
+          title: 'GridChat', body: 'Yeni mesaj aldınız.', url: '/', tag: `gridchat-${messageId}`
+        }));
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await sb('push_subscriptions', { method: 'DELETE', query: `?endpoint=eq.${encodeURIComponent(item.endpoint)}` }).catch(() => {});
+        } else console.error('Push bildirimi gönderilemedi:', err.message);
+      }
+    }));
+  } catch (err) {
+    console.error('Push bildirimleri hazırlanamadı:', err.message);
   }
 }
 function adminOnly(req, res, next) {
@@ -772,6 +841,7 @@ io.on('connection', async socket => {
         }
       });
       io.to('conv:' + convId).emit('message', toClient(row, { [socket.user.id]: socket.user.username }, convId));
+      void pushMessageToConversation(convId, socket.user.id, row.id);
       ack && ack({ ok: true });
     } catch (err) {
       console.error(err);
