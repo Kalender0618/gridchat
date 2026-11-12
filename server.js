@@ -255,6 +255,29 @@ app.get('/api/conversations', auth, wrap(async (req, res) => {
   res.json({ conversations: result });
 }));
 
+// Reconcile messages missed while this browser was disconnected or closed.
+app.get('/api/notifications/missed', auth, wrap(async (req, res) => {
+  const memberships = await sb('conversation_members', { query: `?user_id=eq.${req.user.id}&select=conversation_id` });
+  const convIds = memberships.map(m => m.conversation_id);
+  if (!convIds.length) return res.json({ messages: [] });
+  const [rows, convs] = await Promise.all([
+    sb('messages', { query: `?conversation_id=${inList(convIds)}&sender_id=neq.${req.user.id}&select=*&order=created_at.desc&limit=100` }),
+    sb('conversations', { query: `?id=${inList(convIds)}&select=id,type,name` })
+  ]);
+  if (!rows.length) return res.json({ messages: [] });
+  const [reads, names] = await Promise.all([
+    sb('message_reads', { query: `?user_id=eq.${req.user.id}&message_id=${inList(rows.map(m => m.id))}&select=message_id` }),
+    usernamesById(rows.map(m => m.sender_id))
+  ]);
+  const readIds = new Set(reads.map(r => r.message_id));
+  const titles = Object.fromEntries(convs.map(c => [c.id, c.type === 'group' ? c.name : 'Birebir sohbet']));
+  const messages = rows.filter(m => !readIds.has(m.id)).map(m => ({
+    ...toClient(m, names),
+    conversation: titles[m.conversation_id] || 'GridChat'
+  }));
+  res.json({ messages });
+}));
+
 // Birebir sohbet (varsa mevcut olan dÃ¶ner)
 app.post('/api/conversations/direct', auth, wrap(async (req, res) => {
   const target = String((req.body && req.body.username) || '').trim().toLowerCase();

@@ -392,6 +392,8 @@ const presenceById = new Map();
 const messageStateById = new Map();
 let profilePhotoDraft = null;
 let manageMemberTimer = null;
+const NOTIFIED_MESSAGES_KEY = 'gridchat_notified_messages';
+let pendingNotificationCount = 0;
 
 // ---------- Tema ----------
 function setTheme(t) {
@@ -575,26 +577,58 @@ async function notifyIncomingMessage(m) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const isViewingMessage = current && current.id === m.conversationId && !document.hidden && document.hasFocus();
   if (isViewingMessage) return;
+  const seen = readNotifiedMessageIds();
+  if (m.id && seen.includes(m.id)) return;
   const conv = conversations.find(c => c.id === m.conversationId);
-  const title = conv ? `${m.from} · ${conv.title}` : `@${m.from} · GridChat`;
+  const title = conv ? `${m.from} · ${conv.title}` : `@${m.from} · ${m.conversation || 'GridChat'}`;
   const body = m.text || (m.image ? 'Fotoğraf gönderdi' : 'Yeni mesaj gönderdi');
+  const options = {
+    body,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: `gridchat-${m.conversationId}-${m.id || Date.now()}`,
+    data: { conversationId: m.conversationId }
+  };
+  let shown = false;
   try {
-    const registration = await navigator.serviceWorker?.ready;
-    if (registration) {
-      await registration.showNotification(title, {
-        body,
-        icon: '/icon-192.png',
-        badge: '/icon-192.png',
-        tag: `gridchat-${m.conversationId}`,
-        data: { conversationId: m.conversationId }
-      });
-    } else {
-      const notification = new Notification(title, { body, icon: '/icon-192.png', tag: `gridchat-${m.conversationId}` });
-      notification.onclick = () => { window.focus(); notification.close(); };
+    const registration = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration() : null;
+    if (registration?.active) {
+      await registration.showNotification(title, options);
+      shown = true;
     }
-    if (document.hidden) document.title = `(${1}) ${notificationTitle}`;
   } catch (err) {
-    console.error('Bildirim gösterilemedi:', err);
+    console.warn('Servis çalışanı bildirimi gösteremedi, tarayıcı bildirimi deneniyor:', err);
+  }
+  if (!shown) {
+    try {
+      const notification = new Notification(title, options);
+      notification.onclick = () => { window.focus(); notification.close(); };
+      shown = true;
+    } catch (err) {
+      console.error('Bildirim gösterilemedi:', err);
+    }
+  }
+  if (shown) {
+    if (m.id) rememberNotifiedMessage(m.id);
+    if (document.hidden) document.title = `(${++pendingNotificationCount}) ${notificationTitle}`;
+  }
+}
+function readNotifiedMessageIds() {
+  try { return JSON.parse(localStorage.getItem(NOTIFIED_MESSAGES_KEY) || '[]'); }
+  catch { return []; }
+}
+function rememberNotifiedMessage(id) {
+  const ids = readNotifiedMessageIds();
+  if (!ids.includes(id)) ids.push(id);
+  localStorage.setItem(NOTIFIED_MESSAGES_KEY, JSON.stringify(ids.slice(-200)));
+}
+async function syncMissedNotifications() {
+  if (!socket?.connected || !('Notification' in window) || Notification.permission !== 'granted') return;
+  try {
+    const { messages } = await api('/api/notifications/missed');
+    for (const message of messages.slice(0, 10).reverse()) await notifyIncomingMessage(message);
+  } catch (err) {
+    console.warn('Kaçırılan mesajlar alınamadı:', err);
   }
 }
 
@@ -694,6 +728,7 @@ function resetChat() {
 function connectSocket() {
   socket = io({ auth: { token } });
   socket.on('connect_error', () => logout());
+  socket.on('connect', syncMissedNotifications);
   socket.on('message', m => {
     if (me && m.userId !== me.id) notifyIncomingMessage(m);
     if (current && m.conversationId === current.id) {
@@ -1605,7 +1640,7 @@ $('installBtn').addEventListener('click', async () => {
 window.addEventListener('appinstalled', () => { $('installBtn').style.display = 'none'; });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) document.title = notificationTitle;
+  if (!document.hidden) { document.title = notificationTitle; pendingNotificationCount = 0; }
 });
 </script>
 </body>
