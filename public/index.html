@@ -25,11 +25,11 @@
 
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html, body { height:100%; }
-  body { margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
+  body { margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; background:radial-gradient(900px 520px at 86% -12%, rgba(91,140,255,.13), transparent 65%), radial-gradient(760px 460px at -14% 100%, rgba(124,92,255,.11), transparent 62%), var(--bg); color:var(--text); overflow:hidden; }
   .hidden { display:none !important; }
-  button { font:inherit; cursor:pointer; border:none; border-radius:12px; padding:9px 14px; background:var(--accent); color:#fff; transition:transform .08s, opacity .15s, background .2s; }
+  button { font:inherit; cursor:pointer; border:none; border-radius:12px; padding:9px 14px; background:var(--accent); color:#fff; transition:transform .08s, opacity .15s, background .2s, box-shadow .2s; }
   button:active { transform:scale(.97); }
-  button:hover { opacity:.92; }
+  button:hover { opacity:.96; box-shadow:0 5px 18px rgba(60,110,255,.2); }
   button.ghost { background:var(--panel2); color:var(--text); border:1px solid var(--line); }
   button.danger { background:var(--danger); }
   button.icon { padding:8px 10px; border-radius:10px; }
@@ -38,6 +38,7 @@
   input[type=range] { padding:0; accent-color:var(--accent); }
   input[type=checkbox] { width:auto; accent-color:var(--accent); }
   .avatar { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:13px; flex:none; }
+  .avatar.photo { background-size:cover; background-position:center; color:transparent; box-shadow:0 0 0 2px rgba(255,255,255,.08); }
   .muted { color:var(--muted); }
 
   /* giriş */
@@ -54,8 +55,8 @@
   .notice { font-size:12px; color:var(--muted); line-height:1.5; }
 
   /* uygulama düzeni */
-  #app { position:fixed; inset:0; display:grid; grid-template-columns: 320px 1fr; }
-  aside { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+  #app { position:fixed; inset:0; display:grid; grid-template-columns: 320px 1fr; padding:12px; gap:12px; }
+  aside { background:color-mix(in srgb, var(--panel) 92%, transparent); border:1px solid var(--line); border-radius:22px; display:flex; flex-direction:column; min-height:0; overflow:hidden; box-shadow:var(--shadow); backdrop-filter:blur(18px); }
   .brand { padding:18px 16px 14px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .brand-left { display:flex; align-items:center; gap:10px; min-width:0; }
   .brand-mark { width:36px; height:36px; border-radius:12px; background:var(--mine); display:grid; place-items:center; flex:none; }
@@ -68,17 +69,17 @@
   .notification-action button { width:100%; padding:9px 10px; font-size:13px; }
   .search { padding:0 12px 10px; }
   #convList { flex:1; overflow-y:auto; padding:4px 8px 8px; }
-  .conv { display:flex; align-items:center; gap:12px; padding:10px; border-radius:14px; cursor:pointer; margin-bottom:2px; transition:background .15s; }
-  .conv:hover { background:var(--panel2); }
-  .conv.active { background:var(--panel2); box-shadow:inset 3px 0 0 var(--accent); }
+  .conv { display:flex; align-items:center; gap:12px; padding:11px; border-radius:14px; cursor:pointer; margin-bottom:4px; transition:background .15s, transform .15s; }
+  .conv:hover { background:var(--panel2); transform:translateX(2px); }
+  .conv.active { background:color-mix(in srgb, var(--accent) 14%, var(--panel2)); box-shadow:inset 3px 0 0 var(--accent); }
   .conv .body { min-width:0; flex:1; }
   .conv .t { font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .conv .k { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .side-footer { padding:12px; border-top:1px solid var(--line); display:flex; gap:8px; align-items:center; }
   .side-footer select { flex:1; padding:8px 10px; font-size:13px; }
 
-  main { display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--bg); }
-  header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); gap:10px; }
+  main { display:flex; flex-direction:column; min-width:0; min-height:0; background:color-mix(in srgb, var(--bg) 91%, transparent); border:1px solid var(--line); border-radius:22px; overflow:hidden; box-shadow:var(--shadow); }
+  header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px; border-bottom:1px solid var(--line); background:color-mix(in srgb, var(--panel) 88%, transparent); gap:10px; backdrop-filter:blur(14px); }
   .head-left { display:flex; align-items:center; gap:10px; min-width:0; }
   header h2 { margin:0; font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   header .sub { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -120,7 +121,7 @@
   .empty .big { font-size:40px; margin-bottom:8px; }
   .msg-row { display:flex; gap:8px; align-items:flex-end; }
   .msg-row.mine { justify-content:flex-end; }
-  .msg { max-width:72%; padding:9px 13px; border-radius:18px; background:var(--other); position:relative; word-wrap:break-word; box-shadow:0 1px 2px rgba(0,0,0,.12); }
+  .msg { max-width:72%; padding:10px 14px; border-radius:18px; background:var(--other); position:relative; word-wrap:break-word; box-shadow:0 5px 18px rgba(0,0,0,.12); }
   .msg.mine { background:var(--mine); color:#fff; border-bottom-right-radius:6px; }
   .msg:not(.mine) { border-bottom-left-radius:6px; }
   .msg .name { font-size:12px; opacity:.75; margin-bottom:2px; font-weight:600; }
@@ -129,6 +130,19 @@
   .msg .meta { font-size:11px; opacity:.65; margin-top:4px; display:flex; gap:8px; justify-content:flex-end; align-items:center; }
   .msg .del { background:none; color:inherit; padding:0 2px; font-size:12px; border-radius:6px; opacity:.7; }
   .msg .del:hover { opacity:1; background:rgba(255,255,255,.12); }
+  .msg .read-status { font-size:10px; opacity:.72; }
+  .msg-actions { display:flex; align-items:center; gap:5px; margin-top:5px; flex-wrap:wrap; }
+  .reaction-button, .react-open { border:1px solid var(--line); background:rgba(0,0,0,.1); color:var(--text); padding:3px 8px; border-radius:999px; font-size:12px; }
+  .msg.mine .reaction-button, .msg.mine .react-open { color:#fff; border-color:rgba(255,255,255,.25); }
+  .reaction-button.selected { outline:2px solid var(--accent); background:color-mix(in srgb, var(--accent) 28%, var(--panel)); }
+  .react-picker { display:flex; gap:4px; padding-top:5px; }
+  .react-picker button { padding:3px 6px; background:var(--panel2); color:var(--text); font-size:16px; }
+  .profile-status { color:var(--muted); font-size:12px; }
+  .member-row { display:flex; align-items:center; gap:10px; padding:10px; border-radius:12px; background:var(--panel2); margin:6px 0; }
+  .member-row .member-name { min-width:0; flex:1; }
+  .member-row .member-name strong { display:block; }
+  .member-row .member-name small { color:var(--muted); }
+  .member-row select, .member-row button { width:auto; padding:7px 9px; font-size:12px; }
   #composer { display:flex; gap:8px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); background:var(--panel); align-items:center; }
   #composer input[type=text] { flex:1; min-width:0; border-radius:22px; padding:12px 16px; }
   #composer label.attach { width:44px; height:44px; border-radius:50%; background:var(--panel2); border:1px solid var(--line); display:grid; place-items:center; cursor:pointer; font-size:18px; flex:none; }
@@ -146,8 +160,11 @@
 
   /* mobil */
   @media (max-width: 820px) {
-    #app { grid-template-columns: 1fr; }
-    aside { border-right:none; }
+    #app { grid-template-columns: 1fr; padding:0; gap:0; }
+    aside { border:0; border-radius:0; }
+    main { border:0; border-radius:0; }
+    header { flex-wrap:wrap; }
+    .head-actions { max-width:100%; overflow-x:auto; }
     main { display:none; }
     body.chat-open aside { display:none; }
     body.chat-open main { display:flex; }
@@ -190,7 +207,10 @@
           <div class="me" id="whoami"></div>
         </div>
       </div>
-      <button class="ghost icon" onclick="logout()" title="Çıkış">⎋</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="ghost icon" id="myProfileBtn" onclick="openProfile()" title="Profili düzenle">👤</button>
+        <button class="ghost icon" onclick="logout()" title="Çıkış">⎋</button>
+      </div>
     </div>
     <div class="side-actions">
       <button onclick="openDirectModal()">+ Birebir</button>
@@ -222,6 +242,7 @@
         </div>
       </div>
       <div class="head-actions">
+        <button class="ghost" id="membersBtn" onclick="openGroupManage()" style="display:none;">Üyeler</button>
         <button class="ghost" id="callBtn" onclick="toggleVoice()" style="display:none;">Konuşma odası</button>
         <button class="ghost" id="shareBtn" onclick="toggleShare()" style="display:none;">Ekran</button>
         <button class="ghost" id="delConvBtn" onclick="deleteCurrentConversation()" style="display:none;" title="Sohbeti sil">🗑</button>
@@ -308,6 +329,39 @@
   </div>
 </div>
 
+<!-- Profil -->
+<div id="profileModal" class="modal hidden" onclick="if(event.target===this)closeModal('profileModal')">
+  <div class="card">
+    <h1 style="font-size:19px;">Profilim</h1>
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div id="profilePreview" class="avatar" style="width:64px;height:64px;font-size:20px;">?</div>
+      <label class="ghost" style="display:inline-flex;align-items:center;justify-content:center;padding:9px 12px;border-radius:12px;cursor:pointer;">Fotoğraf seç<input id="profileFile" type="file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" onchange="uploadProfilePhoto(event)"></label>
+      <button class="ghost" onclick="removeProfilePhoto()">Kaldır</button>
+    </div>
+    <label class="notice">Durum mesajı<input id="profileStatus" maxlength="160" placeholder="Bugün nasılsın?"></label>
+    <div id="profileLastSeen" class="notice"></div>
+    <div id="profileError" class="error"></div>
+    <button onclick="saveProfile()">Kaydet</button>
+    <button class="ghost" onclick="closeModal('profileModal')">Kapat</button>
+  </div>
+</div>
+
+<!-- Grup yönetimi -->
+<div id="groupManageModal" class="modal hidden" onclick="if(event.target===this)closeModal('groupManageModal')">
+  <div class="card" style="max-width:520px;max-height:85vh;overflow:auto;">
+    <h1 style="font-size:19px;">Grup ayarları</h1>
+    <label class="notice">Grup adı<input id="manageGroupName" maxlength="50"></label>
+    <button class="ghost" id="saveGroupNameBtn" onclick="saveGroupName()">Grup adını kaydet</button>
+    <div id="manageMemberList"></div>
+    <div id="addMemberArea" style="display:grid;gap:8px;margin-top:12px;">
+      <input id="manageMemberSearch" placeholder="Kullanıcı adıyla üye ekle" oninput="searchManageMembers(this.value)">
+      <div id="manageMemberResults" class="results"></div>
+    </div>
+    <div id="groupManageError" class="error"></div>
+    <button class="ghost" onclick="closeModal('groupManageModal')">Kapat</button>
+  </div>
+</div>
+
 <!-- Yönetici -->
 <div id="adminModal" class="modal hidden" onclick="if(event.target===this)closeModal('adminModal')">
   <div class="card" style="max-width:720px; width:100%; max-height:85vh; overflow:auto;">
@@ -334,6 +388,10 @@ let conversations = [];
 let pendingImage = null;
 let groupPick = [];
 let notificationTitle = document.title;
+const presenceById = new Map();
+const messageStateById = new Map();
+let profilePhotoDraft = null;
+let manageMemberTimer = null;
 
 // ---------- Tema ----------
 function setTheme(t) {
@@ -344,7 +402,7 @@ function setTheme(t) {
 setTheme(localStorage.getItem('theme') || 'dark');
 
 // ---------- Yardımcılar ----------
-function avatar(name, size) {
+function avatar(name, size, photo) {
   const d = document.createElement('div');
   d.className = 'avatar';
   let h = 0;
@@ -352,6 +410,7 @@ function avatar(name, size) {
   d.style.background = AVATAR_COLORS[h % AVATAR_COLORS.length];
   if (size) { d.style.width = size + 'px'; d.style.height = size + 'px'; }
   d.textContent = String(name).replace(/^@/, '').slice(0, 2).toUpperCase();
+  if (photo) { d.classList.add('photo'); d.style.backgroundImage = `url("${String(photo).replace(/["\\]/g, '')}")`; }
   return d;
 }
 function closeModal(id) { $(id).classList.add('hidden'); }
@@ -399,14 +458,79 @@ async function logout() {
   location.reload();
 }
 function start(user) {
-  me = user;
   $('auth').classList.add('hidden');
   $('app').classList.remove('hidden');
   $('whoami').textContent = '@' + user.username;
+  me = { ...user };
+  updateMyAvatar();
   updateNotificationButton();
   if (user.is_admin) $('adminBtn').style.display = '';
   connectSocket();
   loadConversations();
+}
+
+function setProfilePreview(photo) {
+  const preview = $('profilePreview');
+  preview.classList.toggle('photo', !!photo);
+  preview.style.backgroundImage = photo ? `url("${photo.replace(/["\\]/g, '')}")` : '';
+  preview.textContent = photo ? '' : (me?.username || '?').slice(0, 2).toUpperCase();
+}
+function removeProfilePhoto() {
+  profilePhotoDraft = null;
+  setProfilePreview(null);
+}
+function updateMyAvatar() {
+  const button = $('myProfileBtn');
+  if (!button || !me) return;
+  button.innerHTML = '';
+  button.appendChild(avatar(me.username, 28, me.profile_photo));
+}
+function openProfile() {
+  profilePhotoDraft = me?.profile_photo || null;
+  $('profileStatus').value = me?.status_message || '';
+  $('profileError').textContent = '';
+  $('profileLastSeen').textContent = presenceById.has(me.id) ? 'Şu anda çevrimiçisin' : lastSeenText(me.last_seen_at);
+  setProfilePreview(profilePhotoDraft);
+  $('profileModal').classList.remove('hidden');
+}
+async function uploadProfilePhoto(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  $('profileError').textContent = '';
+  try {
+    const form = new FormData();
+    form.append('photo', file);
+    const { url } = await api('/api/upload', { method: 'POST', body: form });
+    profilePhotoDraft = url;
+    setProfilePreview(url);
+  } catch (err) {
+    $('profileError').textContent = err.message;
+  } finally {
+    event.target.value = '';
+  }
+}
+async function saveProfile() {
+  $('profileError').textContent = '';
+  try {
+    const { user } = await api('/api/me/profile', {
+      method: 'PATCH',
+      body: JSON.stringify({ profile_photo: profilePhotoDraft || '', status_message: $('profileStatus').value })
+    });
+    me = { ...me, ...user };
+    $('whoami').textContent = '@' + me.username;
+    updateMyAvatar();
+    closeModal('profileModal');
+    await loadConversations();
+    if (current) updateChatSubtitle();
+  } catch (err) {
+    $('profileError').textContent = err.message;
+  }
+}
+function updateChatSubtitle() {
+  if (!current) return;
+  $('chatSub').textContent = current.type === 'group'
+    ? `${current.members.length} üye · ${current.members.map(m => '@' + m).join(', ')}`
+    : (current.peer?.status_message || (current.peer?.online ? 'Çevrimiçi' : lastSeenText(current.peer?.last_seen_at)));
 }
 
 function updateNotificationButton() {
@@ -478,6 +602,7 @@ async function notifyIncomingMessage(m) {
 async function loadConversations() {
   const data = await api('/api/conversations');
   conversations = data.conversations;
+  if (socket?.connected) conversations.forEach(c => socket.emit('join:conversation', c.id));
   renderList();
 }
 function renderList() {
@@ -492,11 +617,13 @@ function renderList() {
     d.className = 'conv' + (current && current.id === c.id ? ' active' : '');
     d.onclick = () => openConversation(c);
     const label = c.type === 'group' ? c.title : c.title;
-    d.appendChild(avatar(label));
+    d.appendChild(avatar(label, 36, c.peer?.profile_photo));
     const body = document.createElement('div'); body.className = 'body';
     const t = document.createElement('div'); t.className = 't'; t.textContent = (c.type === 'group' ? '👥 ' : '') + c.title;
     const k = document.createElement('div'); k.className = 'k';
-    k.textContent = c.type === 'group' ? c.members.map(m => '@' + m).join(', ') : 'Birebir sohbet';
+    k.textContent = c.type === 'group'
+      ? `${c.members.length} üye · ${c.members.map(m => '@' + m).join(', ')}`
+      : (c.peer?.online ? 'Çevrimiçi' : lastSeenText(c.peer?.last_seen_at));
     body.appendChild(t); body.appendChild(k);
     d.appendChild(body);
     list.appendChild(d);
@@ -509,6 +636,7 @@ function setComposerEnabled(on) {
 }
 function updateHeaderButtons() {
   const has = !!current;
+  $('membersBtn').style.display = has && current.type === 'group' ? '' : 'none';
   $('callBtn').style.display = has ? '' : 'none';
   $('shareBtn').style.display = has ? '' : 'none';
   $('delConvBtn').style.display = has ? '' : 'none';
@@ -523,16 +651,27 @@ async function openConversation(c) {
   current = c;
   renderList();
   $('chatTitle').textContent = (c.type === 'group' ? '👥 ' : '') + c.title;
-  $('chatSub').textContent = c.type === 'group' ? c.members.map(m => '@' + m).join(', ') : '@' + c.title;
+  $('chatSub').textContent = c.type === 'group'
+    ? `${c.members.length} üye · ${c.members.map(m => '@' + m).join(', ')}`
+    : (c.peer?.status_message || (c.peer?.online ? 'Çevrimiçi' : lastSeenText(c.peer?.last_seen_at)));
   setComposerEnabled(true);
   updateHeaderButtons();
   socket.emit('join:conversation', c.id);
   document.body.classList.add('chat-open');
   const { messages } = await api(`/api/conversations/${c.id}/messages`);
+  if (!current || current.id !== c.id) return;
   $('messages').innerHTML = '';
+  messageStateById.clear();
   if (!messages.length) showEmpty('Henüz mesaj yok. İlk mesajı siz yazın.');
   messages.forEach(appendMessage);
   $('messages').scrollTop = $('messages').scrollHeight;
+  socket.emit('conversation:read', c.id);
+}
+function lastSeenText(value) {
+  if (!value) return 'Son görülme bilinmiyor';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Son görülme bilinmiyor';
+  return 'Son görülme ' + date.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
 }
 function showEmpty(text) {
   $('messages').innerHTML = '<div class="empty"><div class="big">💬</div>' + esc(text) + '</div>';
@@ -561,6 +700,7 @@ function connectSocket() {
       if ($('messages').querySelector('.empty')) $('messages').innerHTML = '';
       appendMessage(m);
       $('messages').scrollTop = $('messages').scrollHeight;
+      if (document.hasFocus() && !document.hidden) socket.emit('conversation:read', current.id);
     } else {
       loadConversations();
     }
@@ -573,6 +713,58 @@ function connectSocket() {
   });
   socket.on('conversations:changed', loadConversations);
   socket.on('presence', n => { $('online').textContent = n + ' çevrimiçi'; });
+  socket.on('presence:snapshot', users => {
+    presenceById.clear();
+    users.forEach(u => presenceById.set(u.userId, u));
+    updatePresenceUI();
+  });
+  socket.on('presence:user', state => {
+    if (state.online) presenceById.set(state.userId, state);
+    else presenceById.delete(state.userId);
+    for (const c of conversations) {
+      const p = c.memberDetails?.find(m => m.id === state.userId);
+      if (p) { p.online = state.online; p.last_seen_at = state.lastSeenAt; }
+      if (c.peer?.id === state.userId) { c.peer.online = state.online; c.peer.last_seen_at = state.lastSeenAt; }
+    }
+    updatePresenceUI();
+  });
+  socket.on('profile:updated', profile => {
+    for (const c of conversations) {
+      const member = c.memberDetails?.find(m => m.id === profile.userId);
+      if (member) Object.assign(member, profile);
+      if (c.peer?.id === profile.userId) Object.assign(c.peer, profile);
+    }
+    if (me?.id === profile.userId) Object.assign(me, profile);
+    renderList(); updateChatSubtitle();
+  });
+  socket.on('group:updated', ({ id, name }) => {
+    const c = conversations.find(item => item.id === id);
+    if (c) c.title = name;
+    if (current?.id === id) { current.title = name; $('chatTitle').textContent = '👥 ' + name; }
+    renderList();
+  });
+  socket.on('group:members-changed', ({ conversationId }) => {
+    loadConversations().then(() => {
+      current = conversations.find(c => c.id === conversationId) || current;
+      updateChatSubtitle();
+    });
+  });
+  socket.on('group:removed', ({ conversationId }) => {
+    if (current?.id === conversationId) resetChat();
+    loadConversations();
+  });
+  socket.on('read:update', ({ messageIds, userId }) => {
+    messageIds.forEach(id => {
+      const m = messageStateById.get(id);
+      if (m && !m.readBy.includes(userId)) m.readBy.push(userId);
+      refreshMessageState(id);
+    });
+  });
+  socket.on('reaction:update', ({ messageId, reactions }) => {
+    const m = messageStateById.get(messageId);
+    if (m) m.reactions = reactions;
+    refreshMessageState(messageId);
+  });
   socket.on('sharers', list => { sharers.clear(); list.forEach(s => sharers.set(s.socketId, s.username)); renderSharers(); });
   socket.on('screen:started', ({ socketId, username }) => { sharers.set(socketId, username); renderSharers(); });
   socket.on('screen:stopped', ({ socketId }) => {
@@ -584,13 +776,25 @@ function connectSocket() {
   registerVoice();
 }
 
+function updatePresenceUI() {
+  renderList();
+  updateChatSubtitle();
+  if (me) $('profileLastSeen').textContent = presenceById.has(me.id) ? 'Şu anda çevrimiçisin' : lastSeenText(me.last_seen_at);
+}
+
 // ---------- Mesajlar ----------
 function appendMessage(m) {
+  m.readBy = Array.isArray(m.readBy) ? m.readBy : [];
+  m.reactions = Array.isArray(m.reactions) ? m.reactions : [];
+  messageStateById.set(m.id, m);
   const mine = me && m.userId === me.id;
   const row = document.createElement('div');
   row.className = 'msg-row' + (mine ? ' mine' : '');
   row.dataset.id = m.id;
-  if (!mine) row.appendChild(avatar(m.from, 30));
+  if (!mine) {
+    const sender = current?.memberDetails?.find(member => member.id === m.userId);
+    row.appendChild(avatar(m.from, 30, sender?.profile_photo));
+  }
   const div = document.createElement('div');
   div.className = 'msg' + (mine ? ' mine' : '');
   if (!mine) {
@@ -609,6 +813,12 @@ function appendMessage(m) {
   const time = document.createElement('span');
   time.textContent = new Date(m.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
   meta.appendChild(time);
+  if (mine) {
+    const readStatus = document.createElement('span');
+    readStatus.className = 'read-status';
+    readStatus.dataset.readStatus = '';
+    meta.appendChild(readStatus);
+  }
   if (mine || (me && me.is_admin)) {
     const del = document.createElement('button');
     del.className = 'del'; del.textContent = 'Sil'; del.title = 'Mesajı sil';
@@ -616,12 +826,64 @@ function appendMessage(m) {
     meta.appendChild(del);
   }
   div.appendChild(meta);
+  const actions = document.createElement('div');
+  actions.className = 'msg-actions';
+  actions.dataset.reactions = '';
+  div.appendChild(actions);
+  const picker = document.createElement('div');
+  picker.className = 'react-picker hidden';
+  picker.dataset.picker = '';
+  ['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👎'].forEach(emoji => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.textContent = emoji; button.title = 'Tepki bırak';
+    button.onclick = () => toggleReaction(m.id, emoji);
+    picker.appendChild(button);
+  });
+  div.appendChild(picker);
   row.appendChild(div);
   $('messages').appendChild(row);
+  refreshMessageState(m.id);
+}
+function refreshMessageState(id) {
+  const m = messageStateById.get(id);
+  const row = document.querySelector(`.msg-row[data-id="${id}"]`);
+  if (!m || !row) return;
+  const readStatus = row.querySelector('[data-read-status]');
+  if (readStatus) {
+    const readers = m.readBy.filter(userId => userId !== me?.id);
+    readStatus.textContent = readers.length ? (current?.type === 'group' ? `👁 ${readers.length}` : '✓✓ Okundu') : '✓';
+  }
+  const box = row.querySelector('[data-reactions]');
+  if (!box) return;
+  box.innerHTML = '';
+  const counts = new Map();
+  m.reactions.forEach(r => {
+    const value = counts.get(r.emoji) || { count: 0, selected: false };
+    value.count++;
+    if (r.userId === me?.id) value.selected = true;
+    counts.set(r.emoji, value);
+  });
+  counts.forEach((value, emoji) => {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'reaction-button' + (value.selected ? ' selected' : '');
+    button.textContent = `${emoji} ${value.count}`;
+    button.onclick = () => toggleReaction(id, emoji);
+    box.appendChild(button);
+  });
+  const open = document.createElement('button');
+  open.type = 'button'; open.className = 'react-open'; open.textContent = '☺'; open.title = 'Tepki bırak';
+  open.onclick = () => row.querySelector('[data-picker]')?.classList.toggle('hidden');
+  box.appendChild(open);
+}
+async function toggleReaction(messageId, emoji) {
+  try {
+    await api(`/api/messages/${messageId}/reactions`, { method: 'POST', body: JSON.stringify({ emoji }) });
+  } catch (err) { console.error('Tepki gönderilemedi:', err); }
 }
 function removeMessageEl(id) {
   const el = document.querySelector(`.msg-row[data-id="${id}"]`);
   if (el) el.remove();
+  messageStateById.delete(id);
   if (!$('messages').children.length) showEmpty('Henüz mesaj yok.');
 }
 async function deleteMessage(id) {
@@ -684,7 +946,10 @@ function searchUsers(q) {
     if (!q.trim()) return;
     const { users } = await api('/api/users?q=' + encodeURIComponent(q));
     users.forEach(u => {
-      const d = document.createElement('div'); d.textContent = '@' + u.username;
+      const d = document.createElement('div'); d.className = 'member-row';
+      d.appendChild(avatar(u.username, 32, u.profile_photo));
+      const info = document.createElement('span'); info.textContent = `@${u.username} · ${u.online ? 'Çevrimiçi' : lastSeenText(u.last_seen_at)}`;
+      d.appendChild(info);
       d.onclick = () => openDirect(u.username); box.appendChild(d);
     });
   }, 250);
@@ -740,6 +1005,120 @@ async function createGroup() {
     const c = conversations.find(x => x.id === id);
     if (c) openConversation(c);
   } catch (e) { $('groupError').textContent = e.message; }
+}
+
+function currentGroupRole() {
+  return current?.memberDetails?.find(m => m.id === me?.id)?.role || null;
+}
+function openGroupManage() {
+  if (!current || current.type !== 'group') return;
+  const canManage = me.is_admin || ['owner', 'admin'].includes(currentGroupRole());
+  const isOwner = me.is_admin || currentGroupRole() === 'owner';
+  $('manageGroupName').value = current.title;
+  $('manageGroupName').disabled = !canManage;
+  $('saveGroupNameBtn').classList.toggle('hidden', !canManage);
+  $('addMemberArea').classList.toggle('hidden', !canManage);
+  $('manageMemberSearch').value = '';
+  $('manageMemberResults').innerHTML = '';
+  $('groupManageError').textContent = '';
+  renderGroupMembers(canManage, isOwner);
+  $('groupManageModal').classList.remove('hidden');
+}
+function renderGroupMembers(canManage, isOwner) {
+  const box = $('manageMemberList');
+  box.innerHTML = '<div class="notice">Üyeler ve rolleri</div>';
+  (current?.memberDetails || []).forEach(member => {
+    const row = document.createElement('div'); row.className = 'member-row';
+    row.appendChild(avatar(member.username, 36, member.profile_photo));
+    const info = document.createElement('div'); info.className = 'member-name';
+    const title = document.createElement('strong'); title.textContent = '@' + member.username;
+    const sub = document.createElement('small');
+    const roleLabel = member.role === 'owner' ? 'Grup sahibi' : member.role === 'admin' ? 'Yönetici' : 'Üye';
+    sub.textContent = `${roleLabel} · ${member.online ? 'Çevrimiçi' : lastSeenText(member.last_seen_at)}${member.status_message ? ' · ' + member.status_message : ''}`;
+    info.append(title, sub); row.appendChild(info);
+    if (isOwner && member.role !== 'owner') {
+      const select = document.createElement('select');
+      select.innerHTML = '<option value="member">Üye</option><option value="admin">Yönetici</option><option value="owner">Grup sahibi yap</option>';
+      select.value = member.role === 'admin' ? 'admin' : 'member';
+      select.onchange = () => changeMemberRole(member.id, select.value);
+      row.appendChild(select);
+    }
+    if (canManage && member.role !== 'owner' && member.id !== me.id) {
+      const remove = document.createElement('button'); remove.className = 'danger'; remove.textContent = 'Çıkar';
+      remove.onclick = () => removeGroupMember(member.id, member.username);
+      row.appendChild(remove);
+    }
+    box.appendChild(row);
+  });
+  const self = current?.memberDetails?.find(m => m.id === me.id);
+  if (self && self.role !== 'owner') {
+    const leave = document.createElement('button'); leave.className = 'ghost'; leave.textContent = 'Gruptan ayrıl';
+    leave.onclick = () => removeGroupMember(me.id, me.username);
+    box.appendChild(leave);
+  }
+  if (currentGroupRole() === 'owner' && !me.is_admin) {
+    const note = document.createElement('div'); note.className = 'notice';
+    note.textContent = 'Sahipliği başka bir üyeye devredebilir veya grubu silebilirsin.';
+    box.appendChild(note);
+  }
+}
+async function saveGroupName() {
+  $('groupManageError').textContent = '';
+  try {
+    await api(`/api/conversations/${current.id}`, { method: 'PATCH', body: JSON.stringify({ name: $('manageGroupName').value }) });
+    current.title = $('manageGroupName').value.trim();
+    $('chatTitle').textContent = '👥 ' + current.title;
+    await loadConversations();
+  } catch (err) { $('groupManageError').textContent = err.message; }
+}
+async function searchManageMembers(q) {
+  clearTimeout(manageMemberTimer);
+  manageMemberTimer = setTimeout(async () => {
+    const box = $('manageMemberResults'); box.innerHTML = '';
+    if (!q.trim()) return;
+    try {
+      const { users } = await api('/api/users?q=' + encodeURIComponent(q));
+      const members = new Set((current?.members || []).map(name => name.toLowerCase()));
+      users.filter(user => !members.has(user.username)).forEach(user => {
+        const item = document.createElement('div'); item.className = 'member-row';
+        item.appendChild(avatar(user.username, 30, user.profile_photo));
+        const name = document.createElement('span'); name.textContent = '@' + user.username; item.appendChild(name);
+        const add = document.createElement('button'); add.textContent = 'Ekle'; add.onclick = () => addGroupMember(user.username);
+        item.appendChild(add); box.appendChild(item);
+      });
+    } catch (err) { $('groupManageError').textContent = err.message; }
+  }, 250);
+}
+async function addGroupMember(username) {
+  $('groupManageError').textContent = '';
+  try {
+    await api(`/api/conversations/${current.id}/members`, { method: 'POST', body: JSON.stringify({ username }) });
+    await loadConversations();
+    current = conversations.find(c => c.id === current.id) || current;
+    openGroupManage();
+  } catch (err) { $('groupManageError').textContent = err.message; }
+}
+async function changeMemberRole(userId, role) {
+  if (role === 'owner' && !confirm('Grup sahipliğini bu üyeye devretmek istiyor musun?')) return;
+  try {
+    await api(`/api/conversations/${current.id}/members/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+    await loadConversations();
+    current = conversations.find(c => c.id === current.id) || current;
+    openGroupManage();
+  } catch (err) { $('groupManageError').textContent = err.message; }
+}
+async function removeGroupMember(userId, username) {
+  const leaving = userId === me.id;
+  if (!confirm(leaving ? 'Bu gruptan ayrılmak istiyor musun?' : `@${username} gruptan çıkarılsın mı?`)) return;
+  try {
+    await api(`/api/conversations/${current.id}/members/${userId}`, { method: 'DELETE' });
+    if (leaving) { closeModal('groupManageModal'); resetChat(); }
+    else {
+      await loadConversations();
+      current = conversations.find(c => c.id === current.id) || current;
+      openGroupManage();
+    }
+  } catch (err) { $('groupManageError').textContent = err.message; }
 }
 
 // ---------- Yönetici ----------

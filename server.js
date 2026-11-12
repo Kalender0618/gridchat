@@ -37,6 +37,16 @@ async function sb(table, { method = 'GET', query = '', body } = {}) {
   if (!res.ok) throw new Error(`Supabase ${res.status}: ${text}`);
   return text ? JSON.parse(text) : [];
 }
+async function sbRpc(name, body) {
+  const res = await fetch(`${SB_URL}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Supabase RPC ${res.status}: ${text}`);
+  return text ? JSON.parse(text) : null;
+}
 const inList = ids => `in.(${ids.join(',')})`;
 
 // ---------- Åifreleme ----------
@@ -85,7 +95,7 @@ async function userFromToken(token) {
   if (!token || !/^[0-9a-f]{64}$/.test(token)) return null;
   const s = await sb('sessions', { query: `?token=eq.${token}&select=user_id` });
   if (!s.length) return null;
-  const u = await sb('users', { query: `?id=eq.${s[0].user_id}&select=id,username,is_admin` });
+  const u = await sb('users', { query: `?id=eq.${s[0].user_id}&select=id,username,is_admin,profile_photo,status_message,last_seen_at` });
   return u[0] || null;
 }
 async function isMember(convId, userId) {
@@ -99,6 +109,14 @@ async function usernamesById(ids) {
   if (!unique.length) return {};
   const rows = await sb('users', { query: `?id=${inList(unique)}&select=id,username` });
   return Object.fromEntries(rows.map(u => [u.id, u.username]));
+}
+
+const onlineUsers = new Map();
+async function profilesById(ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return {};
+  const rows = await sb('users', { query: `?id=${inList(unique)}&select=id,username,profile_photo,status_message,last_seen_at` });
+  return Object.fromEntries(rows.map(u => [u.id, u]));
 }
 
 // ---------- Uygulama ----------
@@ -167,7 +185,7 @@ app.post('/api/register', wrap(async (req, res) => {
     body: { username, salt, password_hash: hashPassword(password, salt) }
   });
   const token = await createSession(user.id);
-  res.json({ token, user: { id: user.id, username: user.username, is_admin: user.is_admin } });
+  res.json({ token, user: { id: user.id, username: user.username, is_admin: user.is_admin, profile_photo: user.profile_photo, status_message: user.status_message, last_seen_at: user.last_seen_at } });
 }));
 
 app.post('/api/login', wrap(async (req, res) => {
@@ -187,17 +205,26 @@ app.post('/api/logout', auth, wrap(async (req, res) => {
 }));
 
 app.get('/api/me', auth, (req, res) => {
-  res.json({ user: { id: req.user.id, username: req.user.username, is_admin: req.user.is_admin } });
+  res.json({ user: { id: req.user.id, username: req.user.username, is_admin: req.user.is_admin, profile_photo: req.user.profile_photo, status_message: req.user.status_message, last_seen_at: req.user.last_seen_at } });
 });
+
+app.patch('/api/me/profile', auth, wrap(async (req, res) => {
+  const status = String((req.body && req.body.status_message) || '').trim().slice(0, 160);
+  const photo = String((req.body && req.body.profile_photo) || '').trim();
+  if (photo && !photo.startsWith(PUBLIC_BASE)) return res.status(400).json({ error: 'Profil fotoğrafı geçersiz' });
+  const [user] = await sb('users', { method: 'PATCH', query: `?id=eq.${req.user.id}&select=id,username,is_admin,profile_photo,status_message,last_seen_at`, body: { profile_photo: photo || null, status_message: status || null } });
+  io.emit('profile:updated', { userId: user.id, profile_photo: user.profile_photo, status_message: user.status_message });
+  res.json({ user });
+}));
 
 // KullanÄ±cÄ± arama (birine kullanÄ±cÄ± adÄ±yla sohbet aÃ§mak iÃ§in)
 app.get('/api/users', auth, wrap(async (req, res) => {
   const q = String(req.query.q || '').toLowerCase().replace(/[^a-z0-9_]/g, '');
   if (!q) return res.json({ users: [] });
   const rows = await sb('users', {
-    query: `?username=ilike.${q}*&select=id,username&limit=20&order=username.asc`
+    query: `?username=ilike.${q}*&select=id,username,profile_photo,status_message,last_seen_at&limit=20&order=username.asc`
   });
-  res.json({ users: rows.filter(u => u.id !== req.user.id) });
+  res.json({ users: rows.filter(u => u.id !== req.user.id).map(u => ({ ...u, online: onlineUsers.has(u.id) })) });
 }));
 
 // Sohbet listesi
@@ -207,19 +234,22 @@ app.get('/api/conversations', auth, wrap(async (req, res) => {
   if (!ids.length) return res.json({ conversations: [] });
 
   const convs = await sb('conversations', { query: `?id=${inList(ids)}&select=*&order=created_at.desc` });
-  const members = await sb('conversation_members', { query: `?conversation_id=${inList(ids)}&select=conversation_id,user_id` });
-  const names = await usernamesById(members.map(m => m.user_id));
+  const members = await sb('conversation_members', { query: `?conversation_id=${inList(ids)}&select=conversation_id,user_id,role` });
+  const profiles = await profilesById(members.map(m => m.user_id));
 
   const result = convs.map(c => {
     const others = members
       .filter(m => m.conversation_id === c.id && m.user_id !== req.user.id)
-      .map(m => names[m.user_id]);
+      .map(m => profiles[m.user_id]?.username);
+    const convMembers = members.filter(m => m.conversation_id === c.id);
     return {
       id: c.id,
       type: c.type,
       createdByMe: c.created_by === req.user.id,
       title: c.type === 'group' ? c.name : others[0] || 'Bilinmeyen',
-      members: members.filter(m => m.conversation_id === c.id).map(m => names[m.user_id])
+      members: convMembers.map(m => profiles[m.user_id]?.username).filter(Boolean),
+      memberDetails: convMembers.map(m => ({ ...profiles[m.user_id], role: m.role, online: onlineUsers.has(m.user_id) })).filter(m => m.id),
+      peer: c.type === 'direct' ? convMembers.map(m => profiles[m.user_id]).find(p => p && p.id !== req.user.id) || null : null
     };
   });
   res.json({ conversations: result });
@@ -251,7 +281,7 @@ app.post('/api/conversations/direct', auth, wrap(async (req, res) => {
   });
   await sb('conversation_members', {
     method: 'POST',
-    body: [{ conversation_id: conv.id, user_id: req.user.id }, { conversation_id: conv.id, user_id: other.id }]
+    body: [{ conversation_id: conv.id, user_id: req.user.id, role: 'member' }, { conversation_id: conv.id, user_id: other.id, role: 'member' }]
   });
   io.emit('conversations:changed');
   res.json({ id: conv.id });
@@ -274,7 +304,7 @@ app.post('/api/conversations/group', auth, wrap(async (req, res) => {
   });
   await sb('conversation_members', {
     method: 'POST',
-    body: [...memberIds].map(id => ({ conversation_id: conv.id, user_id: id }))
+    body: [...memberIds].map(id => ({ conversation_id: conv.id, user_id: id, role: id === req.user.id ? 'owner' : 'member' }))
   });
   io.emit('conversations:changed');
   res.json({ id: conv.id });
@@ -291,7 +321,17 @@ app.get('/api/conversations/:id/messages', auth, wrap(async (req, res) => {
     query: `?conversation_id=eq.${convId}&select=*&order=created_at.desc&limit=200`
   });
   const names = await usernamesById(rows.map(r => r.sender_id));
-  const messages = rows.reverse().map(r => toClient(r, names, convId));
+  const ordered = rows.reverse();
+  const messageIds = ordered.map(r => r.id);
+  const [reads, reactions] = messageIds.length ? await Promise.all([
+    sb('message_reads', { query: `?message_id=${inList(messageIds)}&select=message_id,user_id,read_at` }),
+    sb('message_reactions', { query: `?message_id=${inList(messageIds)}&select=message_id,user_id,emoji` })
+  ]) : [[], []];
+  const messages = ordered.map(row => ({
+    ...toClient(row, names, convId),
+    readBy: reads.filter(r => r.message_id === row.id).map(r => r.user_id),
+    reactions: reactions.filter(r => r.message_id === row.id).map(r => ({ userId: r.user_id, emoji: r.emoji }))
+  }));
   res.json({ messages });
 }));
 
@@ -306,6 +346,31 @@ function toClient(row, names, convId) {
     createdAt: new Date(row.created_at).getTime()
   };
 }
+
+const REACTION_EMOJIS = new Set(['👍', '❤️', '😂', '😮', '😢', '🔥', '🎉', '👎']);
+async function conversationForMessage(messageId, userId) {
+  const rows = await sb('messages', { query: `?id=eq.${messageId}&select=id,conversation_id` });
+  const msg = rows[0];
+  if (!msg) return null;
+  return await isMember(msg.conversation_id, userId) ? msg.conversation_id : false;
+}
+
+app.post('/api/messages/:id/reactions', auth, wrap(async (req, res) => {
+  const messageId = req.params.id;
+  if (!UUID_RE.test(messageId)) return res.status(400).json({ error: 'Geçersiz mesaj' });
+  const emoji = String((req.body && req.body.emoji) || '');
+  if (!REACTION_EMOJIS.has(emoji)) return res.status(400).json({ error: 'Bu tepki desteklenmiyor' });
+  const convId = await conversationForMessage(messageId, req.user.id);
+  if (convId === null) return res.status(404).json({ error: 'Mesaj bulunamadı' });
+  if (convId === false) return res.status(403).json({ error: 'Bu sohbete erişiminiz yok' });
+  const existing = await sb('message_reactions', { query: `?message_id=eq.${messageId}&user_id=eq.${req.user.id}&emoji=eq.${encodeURIComponent(emoji)}&select=message_id` });
+  const active = existing.length === 0;
+  if (active) await sb('message_reactions', { method: 'POST', body: { message_id: messageId, user_id: req.user.id, emoji } });
+  else await sb('message_reactions', { method: 'DELETE', query: `?message_id=eq.${messageId}&user_id=eq.${req.user.id}&emoji=eq.${encodeURIComponent(emoji)}` });
+  const all = await sb('message_reactions', { query: `?message_id=eq.${messageId}&select=user_id,emoji` });
+  io.to('conv:' + convId).emit('reaction:update', { messageId, conversationId: convId, reactions: all.map(r => ({ userId: r.user_id, emoji: r.emoji })) });
+  res.json({ ok: true, active });
+}));
 
 const BUCKET = 'chat-images';
 const PUBLIC_BASE = `${SB_URL}/storage/v1/object/public/${BUCKET}/`;
@@ -360,6 +425,100 @@ app.delete('/api/messages/:id', auth, wrap(async (req, res) => {
   await sb('messages', { method: 'DELETE', query: `?id=eq.${id}` });
   await deleteStorageObject(msg.image_path);
   io.to('conv:' + msg.conversation_id).emit('message:deleted', { id, conversationId: msg.conversation_id });
+  res.json({ ok: true });
+}));
+
+async function getGroupAndRole(convId, userId) {
+  const [convs, members] = await Promise.all([
+    sb('conversations', { query: `?id=eq.${convId}&select=id,type,name,created_by` }),
+    sb('conversation_members', { query: `?conversation_id=eq.${convId}&user_id=eq.${userId}&select=role` })
+  ]);
+  return { conv: convs[0], role: members[0]?.role || null };
+}
+function canManageGroup(user, role) {
+  return user.is_admin || role === 'owner' || role === 'admin';
+}
+
+app.patch('/api/conversations/:id', auth, wrap(async (req, res) => {
+  const convId = req.params.id;
+  if (!UUID_RE.test(convId)) return res.status(400).json({ error: 'Geçersiz sohbet' });
+  const { conv, role } = await getGroupAndRole(convId, req.user.id);
+  if (!conv || conv.type !== 'group') return res.status(404).json({ error: 'Grup bulunamadı' });
+  if (!canManageGroup(req.user, role)) return res.status(403).json({ error: 'Grubu yönetme yetkiniz yok' });
+  const name = String((req.body && req.body.name) || '').trim().slice(0, 50);
+  if (!name) return res.status(400).json({ error: 'Grup adı boş olamaz' });
+  await sb('conversations', { method: 'PATCH', query: `?id=eq.${convId}`, body: { name } });
+  io.to('conv:' + convId).emit('group:updated', { id: convId, name });
+  io.emit('conversations:changed');
+  res.json({ ok: true, name });
+}));
+
+app.post('/api/conversations/:id/members', auth, wrap(async (req, res) => {
+  const convId = req.params.id;
+  if (!UUID_RE.test(convId)) return res.status(400).json({ error: 'Geçersiz sohbet' });
+  const { conv, role } = await getGroupAndRole(convId, req.user.id);
+  if (!conv || conv.type !== 'group') return res.status(404).json({ error: 'Grup bulunamadı' });
+  if (!canManageGroup(req.user, role)) return res.status(403).json({ error: 'Üye ekleme yetkiniz yok' });
+  const username = String((req.body && req.body.username) || '').trim().toLowerCase();
+  if (!USERNAME_RE.test(username)) return res.status(400).json({ error: 'Geçersiz kullanıcı adı' });
+  const users = await sb('users', { query: `?username=eq.${username}&select=id,username` });
+  const user = users[0];
+  if (!user) return res.status(404).json({ error: 'Kullanıcı bulunamadı' });
+  if (await isMember(convId, user.id)) return res.status(409).json({ error: 'Bu kullanıcı zaten grupta' });
+  await sb('conversation_members', { method: 'POST', body: { conversation_id: convId, user_id: user.id, role: 'member' } });
+  for (const sock of io.sockets.sockets.values()) {
+    if (sock.user?.id === user.id) {
+      sock.join('conv:' + convId);
+      sock.emit('conversations:changed');
+    }
+  }
+  io.to('conv:' + convId).emit('group:members-changed', { conversationId: convId });
+  io.emit('conversations:changed');
+  res.json({ ok: true });
+}));
+
+app.patch('/api/conversations/:id/members/:userId', auth, wrap(async (req, res) => {
+  const { id: convId, userId } = req.params;
+  if (!UUID_RE.test(convId) || !UUID_RE.test(userId)) return res.status(400).json({ error: 'Geçersiz bilgi' });
+  const { conv, role } = await getGroupAndRole(convId, req.user.id);
+  if (!conv || conv.type !== 'group') return res.status(404).json({ error: 'Grup bulunamadı' });
+  const target = await getGroupAndRole(convId, userId);
+  if (!target.role) return res.status(404).json({ error: 'Üye bulunamadı' });
+  if (role !== 'owner' && !req.user.is_admin) return res.status(403).json({ error: 'Yalnızca grup sahibi rol değiştirebilir' });
+  if (target.role === 'owner') return res.status(400).json({ error: 'Grup sahibinin rolü değiştirilemez' });
+  const nextRole = String((req.body && req.body.role) || '');
+  if (!['owner', 'admin', 'member'].includes(nextRole)) return res.status(400).json({ error: 'Geçersiz grup rolü' });
+  if (nextRole === 'owner') {
+    if (role !== 'owner') return res.status(403).json({ error: 'Sahipliği yalnızca grup sahibi devredebilir' });
+    await sbRpc('transfer_group_owner', { p_conversation_id: convId, p_from_user_id: req.user.id, p_to_user_id: userId });
+  } else {
+    await sb('conversation_members', { method: 'PATCH', query: `?conversation_id=eq.${convId}&user_id=eq.${userId}`, body: { role: nextRole } });
+  }
+  io.to('conv:' + convId).emit('group:members-changed', { conversationId: convId });
+  io.emit('conversations:changed');
+  res.json({ ok: true });
+}));
+
+app.delete('/api/conversations/:id/members/:userId', auth, wrap(async (req, res) => {
+  const { id: convId, userId } = req.params;
+  if (!UUID_RE.test(convId) || !UUID_RE.test(userId)) return res.status(400).json({ error: 'Geçersiz bilgi' });
+  const { conv, role } = await getGroupAndRole(convId, req.user.id);
+  if (!conv || conv.type !== 'group') return res.status(404).json({ error: 'Grup bulunamadı' });
+  const target = await getGroupAndRole(convId, userId);
+  if (!target.role) return res.status(404).json({ error: 'Üye bulunamadı' });
+  const selfLeave = userId === req.user.id;
+  if (target.role === 'owner') return res.status(400).json({ error: 'Grup sahibi gruptan ayrılamaz; önce sahipliği devredin' });
+  if (!selfLeave && !canManageGroup(req.user, role)) return res.status(403).json({ error: 'Üye çıkarma yetkiniz yok' });
+  await sb('conversation_members', { method: 'DELETE', query: `?conversation_id=eq.${convId}&user_id=eq.${userId}` });
+  for (const sock of io.sockets.sockets.values()) {
+    if (sock.user?.id === userId) {
+      sock.leave('conv:' + convId);
+      sock.emit('group:removed', { conversationId: convId });
+      sock.emit('conversations:changed');
+    }
+  }
+  io.to('conv:' + convId).emit('group:members-changed', { conversationId: convId });
+  io.emit('conversations:changed');
   res.json({ ok: true });
 }));
 
@@ -425,7 +584,7 @@ io.use(async (socket, next) => {
   try {
     const user = await userFromToken(socket.handshake.auth && socket.handshake.auth.token);
     if (!user) return next(new Error('unauthorized'));
-    socket.user = { id: user.id, username: user.username, is_admin: user.is_admin };
+    socket.user = { id: user.id, username: user.username, is_admin: user.is_admin, profile_photo: user.profile_photo, status_message: user.status_message, last_seen_at: user.last_seen_at };
     next();
   } catch (err) {
     next(err);
@@ -440,7 +599,30 @@ io.on('connection', async socket => {
     console.error(err);
   }
   socket.emit('sharers', [...sharers].map(([id, s]) => ({ socketId: id, username: s.username })));
-  io.emit('presence', io.engine.clientsCount);
+  const presence = onlineUsers.get(socket.user.id) || { userId: socket.user.id, username: socket.user.username, sockets: new Set(), lastSeenAt: socket.user.last_seen_at || null };
+  presence.sockets.add(socket.id);
+  onlineUsers.set(socket.user.id, presence);
+  socket.emit('presence:snapshot', [...onlineUsers.values()].map(u => ({ userId: u.userId, username: u.username, lastSeenAt: u.lastSeenAt })));
+  io.emit('presence:user', { userId: socket.user.id, username: socket.user.username, online: true, lastSeenAt: presence.lastSeenAt });
+  io.emit('presence', onlineUsers.size);
+
+  socket.on('conversation:read', async convId => {
+    try {
+      if (!UUID_RE.test(convId || '') || !(await isMember(convId, socket.user.id))) return;
+      const rows = await sb('messages', { query: `?conversation_id=eq.${convId}&sender_id=neq.${socket.user.id}&select=id&order=created_at.desc&limit=200` });
+      if (!rows.length) return;
+      const ids = rows.map(r => r.id);
+      const existing = await sb('message_reads', { query: `?message_id=${inList(ids)}&user_id=eq.${socket.user.id}&select=message_id` });
+      const known = new Set(existing.map(r => r.message_id));
+      const unreadIds = ids.filter(id => !known.has(id));
+      if (!unreadIds.length) return;
+      const readAt = new Date().toISOString();
+      await sb('message_reads', { method: 'POST', body: unreadIds.map(message_id => ({ message_id, user_id: socket.user.id, read_at: readAt })) });
+      io.to('conv:' + convId).emit('read:update', { conversationId: convId, userId: socket.user.id, messageIds: unreadIds, readAt });
+    } catch (err) {
+      console.error('Okundu bilgisi kaydedilemedi:', err);
+    }
+  });
 
   socket.on('message', async (payload, ack) => {
     try {
@@ -524,10 +706,20 @@ io.on('connection', async socket => {
     io.to(to).emit('call:signal', { from: socket.id, data });
   });
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     leaveCall(socket);
     stopSharing(socket);
-    io.emit('presence', io.engine.clientsCount);
+    const presence = onlineUsers.get(socket.user.id);
+    if (presence) {
+      presence.sockets.delete(socket.id);
+      if (!presence.sockets.size) {
+        onlineUsers.delete(socket.user.id);
+        const lastSeenAt = new Date().toISOString();
+        await sb('users', { method: 'PATCH', query: `?id=eq.${socket.user.id}`, body: { last_seen_at: lastSeenAt } }).catch(err => console.error('Son görülme kaydedilemedi:', err));
+        io.emit('presence:user', { userId: socket.user.id, username: socket.user.username, online: false, lastSeenAt });
+      }
+    }
+    io.emit('presence', onlineUsers.size);
   });
 });
 
