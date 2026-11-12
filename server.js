@@ -135,6 +135,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'"], // Existing UI uses inline event handlers; remove these before switching to a nonce-only policy.
+      scriptSrcAttr: ["'unsafe-inline'"], // Keep the current onclick/onchange controls working under Helmet's default CSP.
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", 'data:', 'blob:', new URL(SB_URL).origin],
       connectSrc: ["'self'", new URL(SB_URL).origin],
