@@ -108,12 +108,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: path.join(__dirname, 'public', 'uploads'),
-    filename: (req, file, cb) => {
-      cb(null, crypto.randomBytes(12).toString('hex') + path.extname(file.originalname).toLowerCase());
-    }
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/^image\/(png|jpeg|gif|webp)$/.test(file.mimetype)) cb(null, true);
@@ -149,6 +144,9 @@ async function createSession(userId) {
   await sb('sessions', { method: 'POST', body: { token, user_id: userId } });
   return token;
 }
+
+// Uyku önleme için sağlık kontrolü
+app.get('/health', (req, res) => res.json({ ok: true }));
 
 // Hesap
 app.post('/api/register', wrap(async (req, res) => {
@@ -308,11 +306,33 @@ function toClient(row, names, convId) {
   };
 }
 
+const BUCKET = 'chat-images';
+const PUBLIC_BASE = `${SB_URL}/storage/v1/object/public/${BUCKET}/`;
+function extFor(mime) {
+  return { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' }[mime] || '';
+}
+async function uploadImage(file) {
+  const name = crypto.randomBytes(16).toString('hex') + extFor(file.mimetype);
+  const res = await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${name}`, {
+    method: 'POST',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': file.mimetype },
+    body: file.buffer
+  });
+  if (!res.ok) throw new Error('Storage ' + res.status + ': ' + (await res.text()));
+  return PUBLIC_BASE + name;
+}
+
 app.post('/api/upload', auth, (req, res) => {
-  upload.single('photo')(req, res, err => {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!req.file) return res.status(400).json({ error: 'Dosya seÃ§ilmedi' });
-    res.json({ url: '/uploads/' + req.file.filename });
+  upload.single('photo')(req, res, async err => {
+    try {
+      if (err) return res.status(400).json({ error: err.message });
+      if (!req.file) return res.status(400).json({ error: 'Dosya seçilmedi' });
+      const url = await uploadImage(req.file);
+      res.json({ url });
+    } catch (e) {
+      console.error(e);
+      res.status(500).json({ error: 'Fotoğraf yüklenemedi' });
+    }
   });
 });
 
@@ -367,7 +387,7 @@ io.on('connection', async socket => {
       if (!(await isMember(convId, socket.user.id))) return ack && ack({ error: 'Bu sohbete eriÅŸiminiz yok' });
 
       const text = String((payload && payload.text) || '').trim().slice(0, 2000);
-      const image = payload && typeof payload.image === 'string' && /^\/uploads\/[a-f0-9]+\.(png|jpe?g|gif|webp)$/.test(payload.image)
+      const image = payload && typeof payload.image === 'string' && payload.image.startsWith(PUBLIC_BASE)
         ? payload.image : null;
       if (!text && !image) return ack && ack({ error: 'BoÅŸ mesaj gÃ¶nderilemez' });
 
