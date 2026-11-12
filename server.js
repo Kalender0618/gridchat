@@ -5,6 +5,8 @@ const path = require('path');
 const crypto = require('crypto');
 const multer = require('multer');
 const { Server } = require('socket.io');
+const helmet = require('helmet');
+const { rateLimit } = require('express-rate-limit');
 
 const PORT = process.env.PORT || 3000;
 const SB_URL = process.env.SUPABASE_URL;
@@ -79,6 +81,10 @@ async function ensureAdmin() {
     console.warn('ADMIN_USERNAME / ADMIN_PASSWORD tanÄ±mlÄ± deÄŸil, yÃ¶netici hesabÄ± oluÅŸturulmadÄ±');
     return;
   }
+  if (ADMIN_PASSWORD.length < 12) {
+    console.error('Yönetici parolası en az 12 karakter olmalı; yönetici hesabı güncellenmedi.');
+    return;
+  }
   const salt = crypto.randomBytes(16).toString('hex');
   const fields = { salt, password_hash: hashPassword(ADMIN_PASSWORD, salt), is_admin: true };
   const rows = await sb('users', { query: `?username=eq.${ADMIN_USERNAME}&select=id` });
@@ -93,7 +99,7 @@ async function ensureAdmin() {
 // ---------- Oturum ----------
 async function userFromToken(token) {
   if (!token || !/^[0-9a-f]{64}$/.test(token)) return null;
-  const s = await sb('sessions', { query: `?token=eq.${token}&select=user_id` });
+  const s = await sb('sessions', { query: `?token=eq.${token}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=user_id` });
   if (!s.length) return null;
   const u = await sb('users', { query: `?id=eq.${s[0].user_id}&select=id,username,is_admin,profile_photo,status_message,last_seen_at` });
   return u[0] || null;
@@ -122,8 +128,50 @@ async function profilesById(ids) {
 // ---------- Uygulama ----------
 fs.mkdirSync(path.join(__dirname, 'public', 'uploads'), { recursive: true });
 const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"], // Existing UI uses inline event handlers; remove these before switching to a nonce-only policy.
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'blob:', new URL(SB_URL).origin],
+      connectSrc: ["'self'", new URL(SB_URL).origin],
+      mediaSrc: ["'self'", 'blob:'],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"]
+    }
+  }
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+
+function cookieValue(req, name) {
+  const prefix = `${name}=`;
+  return String(req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith(prefix))?.slice(prefix.length) || '';
+}
+function setSessionCookie(req, res, token) {
+  const secure = req.secure || process.env.NODE_ENV === 'production';
+  res.cookie('gridchat_session', token, { httpOnly: true, secure, sameSite: 'strict', path: '/', maxAge: 30 * 24 * 60 * 60 * 1000 });
+}
+function clearSessionCookie(req, res) {
+  res.clearCookie('gridchat_session', { httpOnly: true, secure: req.secure || process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/' });
+}
+app.use('/api', (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const origin = req.get('origin');
+  const expectedOrigin = `${req.protocol}://${req.get('host')}`;
+  if (!origin || origin !== expectedOrigin) return res.status(403).json({ error: 'İstek kaynağı doğrulanamadı' });
+  next();
+});
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Çok fazla giriş denemesi. Biraz sonra tekrar deneyin.' } });
+const registerLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Çok fazla hesap oluşturma denemesi. Daha sonra tekrar deneyin.' } });
+const uploadLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 20, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Saatlik fotoğraf yükleme sınırına ulaştınız.' } });
+const apiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Çok fazla istek. Biraz sonra tekrar deneyin.' } });
+app.use('/api', apiLimiter);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -133,6 +181,14 @@ const upload = multer({
     else cb(new Error('Sadece PNG, JPEG, GIF veya WEBP yÃ¼klenebilir'));
   }
 });
+function imageHasValidSignature(file) {
+  const b = file.buffer;
+  if (file.mimetype === 'image/png') return b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (file.mimetype === 'image/jpeg') return b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
+  if (file.mimetype === 'image/gif') return b.length >= 6 && ['GIF87a', 'GIF89a'].includes(b.subarray(0, 6).toString('ascii'));
+  if (file.mimetype === 'image/webp') return b.length >= 12 && b.subarray(0, 4).toString('ascii') === 'RIFF' && b.subarray(8, 12).toString('ascii') === 'WEBP';
+  return false;
+}
 
 const wrap = fn => (req, res) => fn(req, res).catch(err => {
   console.error(err);
@@ -141,7 +197,7 @@ const wrap = fn => (req, res) => fn(req, res).catch(err => {
 
 async function auth(req, res, next) {
   try {
-    const token = (req.headers.authorization || '').replace('Bearer ', '');
+    const token = cookieValue(req, 'gridchat_session');
     const user = await userFromToken(token);
     if (!user) return res.status(401).json({ error: 'GiriÅŸ yapmalÄ±sÄ±nÄ±z' });
     req.user = user;
@@ -159,7 +215,8 @@ function adminOnly(req, res, next) {
 
 async function createSession(userId) {
   const token = crypto.randomBytes(32).toString('hex');
-  await sb('sessions', { method: 'POST', body: { token, user_id: userId } });
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  await sb('sessions', { method: 'POST', body: { token, user_id: userId, expires_at: expiresAt } });
   return token;
 }
 
@@ -167,13 +224,13 @@ async function createSession(userId) {
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 // Hesap
-app.post('/api/register', wrap(async (req, res) => {
+app.post('/api/register', registerLimiter, wrap(async (req, res) => {
   const username = String((req.body && req.body.username) || '').trim().toLowerCase();
   const password = String((req.body && req.body.password) || '');
   if (!USERNAME_RE.test(username))
     return res.status(400).json({ error: 'KullanÄ±cÄ± adÄ± 3-20 karakter, yalnÄ±zca kÃ¼Ã§Ã¼k harf/rakam/_ olmalÄ±' });
-  if (password.length < 6)
-    return res.status(400).json({ error: 'Åifre en az 6 karakter olmalÄ±' });
+  if (password.length < 12)
+    return res.status(400).json({ error: 'Şifre en az 12 karakter olmalı' });
   if (username === ADMIN_USERNAME)
     return res.status(409).json({ error: 'Bu kullanÄ±cÄ± adÄ± alÄ±nmÄ±ÅŸ' });
   const exists = await sb('users', { query: `?username=eq.${username}&select=id` });
@@ -185,10 +242,11 @@ app.post('/api/register', wrap(async (req, res) => {
     body: { username, salt, password_hash: hashPassword(password, salt) }
   });
   const token = await createSession(user.id);
-  res.json({ token, user: { id: user.id, username: user.username, is_admin: user.is_admin, profile_photo: user.profile_photo, status_message: user.status_message, last_seen_at: user.last_seen_at } });
+  setSessionCookie(req, res, token);
+  res.json({ user: { id: user.id, username: user.username, is_admin: user.is_admin, profile_photo: user.profile_photo, status_message: user.status_message, last_seen_at: user.last_seen_at } });
 }));
 
-app.post('/api/login', wrap(async (req, res) => {
+app.post('/api/login', loginLimiter, wrap(async (req, res) => {
   const username = String((req.body && req.body.username) || '').trim().toLowerCase();
   const password = String((req.body && req.body.password) || '');
   const rows = await sb('users', { query: `?username=eq.${username}&select=*` });
@@ -196,17 +254,32 @@ app.post('/api/login', wrap(async (req, res) => {
   if (!user || !safeEqual(hashPassword(password, user.salt), user.password_hash))
     return res.status(401).json({ error: 'KullanÄ±cÄ± adÄ± veya ÅŸifre hatalÄ±' });
   const token = await createSession(user.id);
-  res.json({ token, user: { id: user.id, username: user.username, is_admin: user.is_admin } });
+  setSessionCookie(req, res, token);
+  res.json({ user: { id: user.id, username: user.username, is_admin: user.is_admin, profile_photo: user.profile_photo, status_message: user.status_message, last_seen_at: user.last_seen_at } });
 }));
 
 app.post('/api/logout', auth, wrap(async (req, res) => {
   await sb('sessions', { method: 'DELETE', query: `?token=eq.${req.token}` });
+  clearSessionCookie(req, res);
   res.json({ ok: true });
 }));
 
 app.get('/api/me', auth, (req, res) => {
   res.json({ user: { id: req.user.id, username: req.user.username, is_admin: req.user.is_admin, profile_photo: req.user.profile_photo, status_message: req.user.status_message, last_seen_at: req.user.last_seen_at } });
 });
+
+app.patch('/api/me/password', auth, wrap(async (req, res) => {
+  const currentPassword = String((req.body && req.body.current_password) || '');
+  const newPassword = String((req.body && req.body.new_password) || '');
+  if (newPassword.length < 12) return res.status(400).json({ error: 'Yeni şifre en az 12 karakter olmalı' });
+  const [account] = await sb('users', { query: `?id=eq.${req.user.id}&select=id,salt,password_hash` });
+  if (!account || !safeEqual(hashPassword(currentPassword, account.salt), account.password_hash))
+    return res.status(401).json({ error: 'Mevcut şifre hatalı' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  await sb('users', { method: 'PATCH', query: `?id=eq.${req.user.id}`, body: { salt, password_hash: hashPassword(newPassword, salt) } });
+  await sb('sessions', { method: 'DELETE', query: `?user_id=eq.${req.user.id}&token=neq.${req.token}` });
+  res.json({ ok: true });
+}));
 
 app.patch('/api/me/profile', auth, wrap(async (req, res) => {
   const status = String((req.body && req.body.status_message) || '').trim().slice(0, 160);
@@ -421,11 +494,12 @@ async function deleteStorageObject(url) {
   }).catch(() => {});
 }
 
-app.post('/api/upload', auth, (req, res) => {
+app.post('/api/upload', uploadLimiter, auth, (req, res) => {
   upload.single('photo')(req, res, async err => {
     try {
       if (err) return res.status(400).json({ error: err.message });
       if (!req.file) return res.status(400).json({ error: 'Dosya seçilmedi' });
+      if (!imageHasValidSignature(req.file)) return res.status(400).json({ error: 'Dosya içeriği geçerli bir görsel değil' });
       const url = await uploadImage(req.file);
       res.json({ url });
     } catch (e) {
@@ -492,6 +566,7 @@ app.post('/api/conversations/:id/members', auth, wrap(async (req, res) => {
   for (const sock of io.sockets.sockets.values()) {
     if (sock.user?.id === user.id) {
       sock.join('conv:' + convId);
+      sock.conversationIds?.add(convId);
       sock.emit('conversations:changed');
     }
   }
@@ -536,6 +611,8 @@ app.delete('/api/conversations/:id/members/:userId', auth, wrap(async (req, res)
   for (const sock of io.sockets.sockets.values()) {
     if (sock.user?.id === userId) {
       sock.leave('conv:' + convId);
+      sock.conversationIds?.delete(convId);
+      if (sharers.get(sock.id)?.conversationId === convId) stopSharing(sock);
       sock.emit('group:removed', { conversationId: convId });
       sock.emit('conversations:changed');
     }
@@ -563,7 +640,11 @@ app.delete('/api/conversations/:id', auth, wrap(async (req, res) => {
     const withImages = await sb('messages', { query: `?conversation_id=eq.${convId}&image_path=not.is.null&select=image_path` });
     await Promise.all(withImages.map(m => deleteStorageObject(m.image_path)));
     io.to('conv:' + convId).emit('conversation:deleted', { id: convId });
-    for (const sock of io.sockets.sockets.values()) sock.leave('conv:' + convId);
+    for (const sock of io.sockets.sockets.values()) {
+      sock.leave('conv:' + convId);
+      sock.conversationIds?.delete(convId);
+      if (sharers.get(sock.id)?.conversationId === convId) stopSharing(sock);
+    }
     await sb('conversations', { method: 'DELETE', query: `?id=eq.${convId}` });
     io.emit('conversations:changed');
     return res.json({ ok: true, deleted: true });
@@ -573,6 +654,7 @@ app.delete('/api/conversations/:id', auth, wrap(async (req, res) => {
   for (const sock of io.sockets.sockets.values()) {
     if (sock.user && sock.user.id === req.user.id) {
       sock.leave('conv:' + convId);
+      sock.conversationIds?.delete(convId);
       sock.emit('conversations:changed');
     }
   }
@@ -600,12 +682,25 @@ app.get('/api/admin/messages', auth, adminOnly, wrap(async (req, res) => {
 
 // ---------- Socket.IO ----------
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 1e6 });
+const io = new Server(server, {
+  maxHttpBufferSize: 1e6,
+  allowRequest: (req, callback) => {
+    try {
+      const origin = new URL(req.headers.origin || '');
+      callback(null, origin.host === req.headers.host && ['http:', 'https:'].includes(origin.protocol));
+    } catch {
+      callback(null, false);
+    }
+  }
+});
 const sharers = new Map();
+const screenLinks = new Set();
+const screenLinkKey = (a, b) => [a, b].sort().join(':');
 
 io.use(async (socket, next) => {
   try {
-    const user = await userFromToken(socket.handshake.auth && socket.handshake.auth.token);
+    const token = cookieValue({ headers: socket.handshake.headers }, 'gridchat_session');
+    const user = await userFromToken(token);
     if (!user) return next(new Error('unauthorized'));
     socket.user = { id: user.id, username: user.username, is_admin: user.is_admin, profile_photo: user.profile_photo, status_message: user.status_message, last_seen_at: user.last_seen_at };
     next();
@@ -615,13 +710,14 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', async socket => {
+  socket.conversationIds = new Set();
   try {
     const mine = await sb('conversation_members', { query: `?user_id=eq.${socket.user.id}&select=conversation_id` });
-    mine.forEach(m => socket.join('conv:' + m.conversation_id));
+    mine.forEach(m => { socket.conversationIds.add(m.conversation_id); socket.join('conv:' + m.conversation_id); });
   } catch (err) {
     console.error(err);
   }
-  socket.emit('sharers', [...sharers].map(([id, s]) => ({ socketId: id, username: s.username })));
+  socket.emit('sharers', [...sharers].filter(([, s]) => socket.conversationIds.has(s.conversationId)).map(([id, s]) => ({ socketId: id, username: s.username })));
   const presence = onlineUsers.get(socket.user.id) || { userId: socket.user.id, username: socket.user.username, sockets: new Set(), lastSeenAt: socket.user.last_seen_at || null };
   presence.sockets.add(socket.id);
   onlineUsers.set(socket.user.id, presence);
@@ -649,6 +745,10 @@ io.on('connection', async socket => {
 
   socket.on('message', async (payload, ack) => {
     try {
+      const now = Date.now();
+      socket.messageTimes = (socket.messageTimes || []).filter(time => now - time < 60_000);
+      if (socket.messageTimes.length >= 30) return ack && ack({ error: 'Çok hızlı mesaj gönderiyorsunuz. Biraz bekleyin.' });
+      socket.messageTimes.push(now);
       const convId = payload && payload.conversationId;
       if (!UUID_RE.test(convId || '')) return ack && ack({ error: 'GeÃ§ersiz sohbet' });
       if (!(await isMember(convId, socket.user.id))) return ack && ack({ error: 'Bu sohbete eriÅŸiminiz yok' });
@@ -677,19 +777,45 @@ io.on('connection', async socket => {
 
   // Yeni sohbet/grup oluÅŸturulduÄŸunda ya da birine eklendiÄŸinde odaya katÄ±lma
   socket.on('join:conversation', async convId => {
-    if (UUID_RE.test(convId || '') && (await isMember(convId, socket.user.id))) socket.join('conv:' + convId);
+    if (UUID_RE.test(convId || '') && (await isMember(convId, socket.user.id))) {
+      socket.conversationIds.add(convId);
+      socket.join('conv:' + convId);
+    }
   });
 
   // Ekran paylaÅŸÄ±mÄ± (sohbetten baÄŸÄ±msÄ±z, herkese aÃ§Ä±k)
-  socket.on('screen:start', () => {
-    sharers.set(socket.id, { username: socket.user.username });
-    io.emit('screen:started', { socketId: socket.id, username: socket.user.username });
+  socket.on('screen:start', async (payload, ack) => {
+    try {
+      const conversationId = payload && payload.conversationId;
+      if (!UUID_RE.test(conversationId || '') || !(await isMember(conversationId, socket.user.id))) return ack && ack({ error: 'Önce üyesi olduğunuz bir sohbeti açın' });
+      stopSharing(socket);
+      const share = { username: socket.user.username, userId: socket.user.id, conversationId };
+      sharers.set(socket.id, share);
+      io.to('conv:' + conversationId).emit('screen:started', { socketId: socket.id, username: socket.user.username });
+      ack && ack({ ok: true });
+    } catch (err) { ack && ack({ error: 'Ekran paylaşımı başlatılamadı' }); }
   });
   socket.on('screen:stop', () => stopSharing(socket));
-  socket.on('screen:join', ({ to }) => {
-    if (sharers.has(to)) io.to(to).emit('screen:viewer', { viewerId: socket.id, username: socket.user.username });
+  socket.on('screen:join', async (payload, ack) => {
+    try {
+      const to = payload && payload.to;
+      const share = sharers.get(to);
+      if (!share || to === socket.id || !(await isMember(share.conversationId, socket.user.id))) return ack && ack({ error: 'Bu ekran paylaşımına erişiminiz yok' });
+      screenLinks.add(screenLinkKey(socket.id, to));
+      io.to(to).emit('screen:viewer', { viewerId: socket.id, username: socket.user.username });
+      ack && ack({ ok: true });
+    } catch (err) { ack && ack({ error: 'Ekran paylaşımına bağlanılamadı' }); }
   });
-  socket.on('webrtc:signal', ({ to, data }) => {
+  socket.on('screen:leave', payload => {
+    const to = payload && payload.to;
+    if (!to || !screenLinks.has(screenLinkKey(socket.id, to))) return;
+    screenLinks.delete(screenLinkKey(socket.id, to));
+    io.to(to).emit('screen:viewer-left', { viewerId: socket.id });
+  });
+  socket.on('webrtc:signal', payload => {
+    const to = payload && payload.to;
+    const data = payload && payload.data;
+    if (!to || !screenLinks.has(screenLinkKey(socket.id, to)) || !data || typeof data !== 'object' || JSON.stringify(data).length > 65536) return;
     io.to(to).emit('webrtc:signal', { from: socket.id, data });
   });
 
@@ -732,6 +858,13 @@ io.on('connection', async socket => {
   socket.on('disconnect', async () => {
     leaveCall(socket);
     stopSharing(socket);
+    for (const link of [...screenLinks]) {
+      if (!link.split(':').includes(socket.id)) continue;
+      screenLinks.delete(link);
+      const [a, b] = link.split(':');
+      const other = a === socket.id ? b : a;
+      io.to(other).emit('screen:viewer-left', { viewerId: socket.id });
+    }
     const presence = onlineUsers.get(socket.user.id);
     if (presence) {
       presence.sockets.delete(socket.id);
@@ -760,9 +893,14 @@ function leaveCall(socket) {
 }
 
 function stopSharing(socket) {
-  if (!sharers.has(socket.id)) return;
+  const share = sharers.get(socket.id);
+  if (!share) return;
   sharers.delete(socket.id);
-  io.emit('screen:stopped', { socketId: socket.id });
+  for (const link of [...screenLinks]) {
+    if (!link.split(':').includes(socket.id)) continue;
+    screenLinks.delete(link);
+  }
+  io.to('conv:' + share.conversationId).emit('screen:stopped', { socketId: socket.id });
 }
 
 ensureAdmin()

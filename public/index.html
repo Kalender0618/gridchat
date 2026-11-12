@@ -189,7 +189,7 @@
       <button id="tabRegister" onclick="switchTab('register')">Hesap oluştur</button>
     </div>
     <input id="username" placeholder="Kullanıcı adı (3-20, küçük harf/rakam/_)" autocomplete="username">
-    <input id="password" type="password" placeholder="Şifre (en az 6 karakter)" autocomplete="current-password">
+    <input id="password" type="password" placeholder="Şifre (en az 12 karakter)" autocomplete="current-password">
     <button id="authBtn" data-mode="login" onclick="submitAuth()">Giriş yap</button>
     <div id="authError" class="error"></div>
     <div class="notice">Mesajlar şifreli saklanır. Yönetici hesabı tüm mesajları denetleyebilir.</div>
@@ -340,6 +340,11 @@
     </div>
     <label class="notice">Durum mesajı<input id="profileStatus" maxlength="160" placeholder="Bugün nasılsın?"></label>
     <div id="profileLastSeen" class="notice"></div>
+    <div class="notice" style="border-top:1px solid var(--line);padding-top:12px;">Şifre güvenliği
+      <input id="currentPassword" type="password" autocomplete="current-password" placeholder="Mevcut şifre">
+      <input id="newPassword" type="password" autocomplete="new-password" placeholder="Yeni şifre (en az 12 karakter)">
+      <button class="ghost" type="button" onclick="changePassword()">Şifreyi değiştir</button>
+    </div>
     <div id="profileError" class="error"></div>
     <button onclick="saveProfile()">Kaydet</button>
     <button class="ghost" onclick="closeModal('profileModal')">Kapat</button>
@@ -380,7 +385,6 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', 
 const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 const AVATAR_COLORS = ['#5b8cff', '#e5484d', '#30a46c', '#f5a524', '#8e5cff', '#14b8a6', '#ec4899'];
 
-let token = localStorage.getItem('token');
 let me = null;
 let socket = null;
 let current = null;
@@ -421,13 +425,13 @@ async function api(url, opts = {}) {
   const isForm = opts.body instanceof FormData;
   const res = await fetch(url, {
     ...opts,
+    credentials: 'same-origin',
     headers: {
       ...(!isForm && opts.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(token ? { Authorization: 'Bearer ' + token } : {})
     }
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Bir hata oluştu');
+  if (!res.ok) { const err = new Error(data.error || 'Bir hata oluştu'); err.status = res.status; throw err; }
   return data;
 }
 
@@ -448,15 +452,12 @@ async function submitAuth() {
       method: 'POST',
       body: JSON.stringify({ username: $('username').value, password: $('password').value })
     });
-    token = data.token;
-    localStorage.setItem('token', token);
     start(data.user);
   } catch (e) { $('authError').textContent = e.message; }
 }
 async function logout() {
   if (callConv) leaveVoice();
   try { await api('/api/logout', { method: 'POST' }); } catch (e) {}
-  localStorage.removeItem('token');
   location.reload();
 }
 function start(user) {
@@ -527,6 +528,18 @@ async function saveProfile() {
   } catch (err) {
     $('profileError').textContent = err.message;
   }
+}
+async function changePassword() {
+  $('profileError').textContent = '';
+  try {
+    await api('/api/me/password', {
+      method: 'PATCH',
+      body: JSON.stringify({ current_password: $('currentPassword').value, new_password: $('newPassword').value })
+    });
+    $('currentPassword').value = '';
+    $('newPassword').value = '';
+    $('profileError').textContent = 'Şifren değiştirildi; diğer cihazlardaki oturumlar kapatıldı.';
+  } catch (err) { $('profileError').textContent = err.message; }
 }
 function updateChatSubtitle() {
   if (!current) return;
@@ -726,8 +739,10 @@ function resetChat() {
 
 // ---------- Socket ----------
 function connectSocket() {
-  socket = io({ auth: { token } });
-  socket.on('connect_error', () => logout());
+  socket = io();
+  socket.on('connect_error', err => {
+    if (err && err.message === 'unauthorized') logout();
+  });
   socket.on('connect', syncMissedNotifications);
   socket.on('message', m => {
     if (me && m.userId !== me.id) notifyIncomingMessage(m);
@@ -807,6 +822,11 @@ function connectSocket() {
     if (watchingId === socketId) leaveViewing();
   });
   socket.on('screen:viewer', onViewerJoined);
+  socket.on('screen:viewer-left', ({ viewerId }) => {
+    const peer = sharerPeers.get(viewerId);
+    if (peer) peer.close();
+    sharerPeers.delete(viewerId);
+  });
   socket.on('webrtc:signal', onSignal);
   registerVoice();
 }
@@ -1202,9 +1222,12 @@ function joinSelected() {
   const id = $('sharerSelect').value;
   if (!id) return;
   watchingId = id;
-  socket.emit('screen:join', { to: id });
+  socket.timeout(5000).emit('screen:join', { to: id }, (err, result) => {
+    if (err || !result?.ok) { leaveViewing(); alert(result?.error || 'Ekran paylaşımına bağlanılamadı'); }
+  });
 }
 function leaveViewing() {
+  if (watchingId && socket?.connected) socket.emit('screen:leave', { to: watchingId });
   watchingId = null;
   if (viewerPc) { viewerPc.close(); viewerPc = null; }
   $('videos').innerHTML = '';
@@ -1212,12 +1235,21 @@ function leaveViewing() {
 }
 async function toggleShare() {
   if (sharers.has(socket.id)) return stopSharing();
+  if (!current) return alert('Ekran paylaşmak için önce bir sohbet açın.');
   try {
     localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
   } catch (e) { return alert('Ekran paylaşımı başlatılamadı: ' + e.message); }
   localStream.getVideoTracks()[0].onended = stopSharing;
   sharers.set(socket.id, me.username);
-  socket.emit('screen:start');
+  socket.timeout(5000).emit('screen:start', { conversationId: current.id }, (err, result) => {
+    if (err || !result?.ok) {
+      if (localStream) localStream.getTracks().forEach(track => track.stop());
+      localStream = null;
+      sharers.delete(socket.id);
+      renderSharers();
+      alert(result?.error || 'Ekran paylaşımı başlatılamadı');
+    }
+  });
   renderSharers();
   const local = document.createElement('video');
   local.muted = true; local.autoplay = true; local.playsInline = true; local.srcObject = localStream;
@@ -1613,13 +1645,12 @@ function renderVoice() {
 switchTab('login');
 setComposerEnabled(false);
 (async () => {
-  if (!token) return;
+  localStorage.removeItem('token'); // Remove tokens left by the pre-cookie version.
   try {
     const { user } = await api('/api/me');
     start(user);
   } catch (e) {
-    localStorage.removeItem('token');
-    token = null;
+    if (e.status !== 401) $('authError').textContent = 'Sunucuya bağlanılamadı. Biraz sonra yeniden deneyin.';
   }
 })();
 
