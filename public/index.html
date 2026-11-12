@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GridChat</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#4f7cff">
@@ -13,92 +13,156 @@
 <link rel="apple-touch-icon" href="/icon-192.png">
 <script src="/socket.io/socket.io.js"></script>
 <style>
-  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3b; --text:#e7eaf0; --muted:#8a93a6; --accent:#4f7cff; --mine:#2d4fb3; --other:#222733; --danger:#c0392b; }
-  [data-theme="light"] { --bg:#f3f5f9; --panel:#ffffff; --panel2:#f0f2f7; --line:#dde2ec; --text:#1b1f2a; --muted:#6b7385; --accent:#3366ff; --mine:#3366ff; --other:#e8ecf4; }
-  [data-theme="ocean"] { --bg:#0b1d2a; --panel:#10293b; --panel2:#153447; --line:#1f4560; --text:#e0f2ff; --muted:#7fa7bf; --accent:#22b8cf; --mine:#0e8fa3; --other:#1a3d52; }
-  [data-theme="forest"] { --bg:#0d1a12; --panel:#132619; --panel2:#1a3322; --line:#23432c; --text:#e6f5ea; --muted:#8fb89a; --accent:#2fbf71; --mine:#1f8a51; --other:#1d3a27; }
-  * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--text); height:100vh; overflow:hidden; }
+  :root {
+    --bg:#0c0e13; --panel:#14171f; --panel2:#1b1f29; --line:#252a36;
+    --text:#eef1f7; --muted:#8b93a7; --accent:#5b8cff; --accent2:#7c5cff;
+    --mine:linear-gradient(135deg,#5b8cff,#7c5cff); --other:#1f2431;
+    --danger:#e5484d; --ok:#30a46c; --radius:16px; --shadow:0 10px 30px rgba(0,0,0,.35);
+  }
+  [data-theme="light"] { --bg:#f2f4f9; --panel:#fff; --panel2:#f0f2f7; --line:#e1e5ee; --text:#1a1f2b; --muted:#6b7385; --accent:#3d6bff; --accent2:#6a4dff; --mine:linear-gradient(135deg,#3d6bff,#6a4dff); --other:#eceff6; --shadow:0 8px 24px rgba(20,30,60,.08); }
+  [data-theme="ocean"] { --bg:#0a1b27; --panel:#0f2535; --panel2:#153047; --line:#1d4058; --text:#e4f4ff; --muted:#7fa7bf; --accent:#22b8cf; --accent2:#0e8fa3; --mine:linear-gradient(135deg,#22b8cf,#0e8fa3); --other:#18384d; }
+  [data-theme="forest"] { --bg:#0b180f; --panel:#122417; --panel2:#19301f; --line:#22422b; --text:#e7f6eb; --muted:#8fb89a; --accent:#2fbf71; --accent2:#1f8a51; --mine:linear-gradient(135deg,#2fbf71,#1f8a51); --other:#1b3323; }
+
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; }
+  body { margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); overflow:hidden; }
   .hidden { display:none !important; }
-  button { font:inherit; cursor:pointer; border:none; border-radius:10px; padding:9px 14px; background:var(--accent); color:#fff; transition:opacity .15s; }
-  button:hover { opacity:.88; }
+  button { font:inherit; cursor:pointer; border:none; border-radius:12px; padding:9px 14px; background:var(--accent); color:#fff; transition:transform .08s, opacity .15s, background .2s; }
+  button:active { transform:scale(.97); }
+  button:hover { opacity:.92; }
   button.ghost { background:var(--panel2); color:var(--text); border:1px solid var(--line); }
   button.danger { background:var(--danger); }
-  input, select, textarea { font:inherit; padding:10px 12px; border-radius:10px; border:1px solid var(--line); background:var(--panel2); color:var(--text); outline:none; }
-  input:focus { border-color:var(--accent); }
+  button.icon { padding:8px 10px; border-radius:10px; }
+  input, select { font:inherit; padding:11px 13px; border-radius:12px; border:1px solid var(--line); background:var(--panel2); color:var(--text); outline:none; transition:border-color .2s; width:100%; }
+  input:focus, select:focus { border-color:var(--accent); }
+  input[type=range] { padding:0; accent-color:var(--accent); }
+  input[type=checkbox] { width:auto; accent-color:var(--accent); }
+  .avatar { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:13px; flex:none; }
+  .muted { color:var(--muted); }
 
   /* giriş */
-  #auth { display:flex; align-items:center; justify-content:center; height:100%; background:radial-gradient(circle at top, var(--panel2), var(--bg)); }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:30px; width:360px; display:flex; flex-direction:column; gap:12px; box-shadow:0 20px 50px rgba(0,0,0,.35); }
-  .card h1 { margin:0; font-size:24px; }
-  .card p.sub { margin:0 0 6px; color:var(--muted); font-size:14px; }
-  .tabs { display:flex; gap:6px; background:var(--panel2); padding:4px; border-radius:12px; }
-  .tabs button { flex:1; background:transparent; color:var(--muted); }
+  #auth { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:20px; background:radial-gradient(900px 600px at 20% -10%, rgba(91,140,255,.25), transparent), radial-gradient(800px 500px at 110% 110%, rgba(124,92,255,.25), transparent), var(--bg); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:22px; padding:28px; width:100%; max-width:380px; display:flex; flex-direction:column; gap:12px; box-shadow:var(--shadow); }
+  .brand-logo { width:52px; height:52px; border-radius:16px; background:var(--mine); display:grid; place-items:center; box-shadow:var(--shadow); margin-bottom:4px; }
+  .brand-logo span { width:18px; height:18px; border-radius:5px; background:#fff; display:inline-block; margin:2px; }
+  .card h1 { margin:0; font-size:24px; letter-spacing:-.3px; }
+  .card p.sub { margin:0 0 4px; color:var(--muted); font-size:14px; }
+  .tabs { display:flex; gap:4px; background:var(--panel2); padding:4px; border-radius:14px; }
+  .tabs button { flex:1; background:transparent; color:var(--muted); padding:9px; }
   .tabs button.active { background:var(--accent); color:#fff; }
   .error { color:#ff7b7b; font-size:14px; min-height:18px; }
-  .notice { font-size:12px; color:var(--muted); line-height:1.4; }
+  .notice { font-size:12px; color:var(--muted); line-height:1.5; }
 
-  /* uygulama */
-  #app { display:grid; grid-template-columns: 300px 1fr; height:100%; }
+  /* uygulama düzeni */
+  #app { position:fixed; inset:0; display:grid; grid-template-columns: 320px 1fr; }
   aside { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
-  .brand { padding:16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--line); }
-  .brand strong { font-size:18px; }
-  .me { font-size:13px; color:var(--muted); }
-  .side-actions { display:flex; gap:6px; padding:10px; }
-  .side-actions button { flex:1; padding:8px; font-size:13px; }
-  #convList { flex:1; overflow-y:auto; padding:6px; }
-  .conv { padding:10px 12px; border-radius:12px; cursor:pointer; margin-bottom:4px; }
+  .brand { padding:18px 16px 14px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .brand-left { display:flex; align-items:center; gap:10px; min-width:0; }
+  .brand-mark { width:36px; height:36px; border-radius:12px; background:var(--mine); display:grid; place-items:center; flex:none; }
+  .brand-mark span { width:10px; height:10px; border-radius:3px; background:#fff; display:inline-block; margin:1px; }
+  .brand strong { font-size:17px; display:block; }
+  .me { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .side-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:4px 12px 12px; }
+  .side-actions button { padding:10px; font-size:14px; }
+  .search { padding:0 12px 10px; }
+  #convList { flex:1; overflow-y:auto; padding:4px 8px 8px; }
+  .conv { display:flex; align-items:center; gap:12px; padding:10px; border-radius:14px; cursor:pointer; margin-bottom:2px; transition:background .15s; }
   .conv:hover { background:var(--panel2); }
-  .conv.active { background:var(--accent); color:#fff; }
-  .conv .t { font-weight:600; }
-  .conv .k { font-size:12px; opacity:.7; }
-  .side-footer { padding:10px; border-top:1px solid var(--line); display:flex; gap:6px; align-items:center; }
-  .side-footer select { flex:1; padding:7px; font-size:13px; }
+  .conv.active { background:var(--panel2); box-shadow:inset 3px 0 0 var(--accent); }
+  .conv .body { min-width:0; flex:1; }
+  .conv .t { font-weight:600; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .conv .k { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .side-footer { padding:12px; border-top:1px solid var(--line); display:flex; gap:8px; align-items:center; }
+  .side-footer select { flex:1; padding:8px 10px; font-size:13px; }
 
   main { display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--bg); }
-  header { display:flex; align-items:center; justify-content:space-between; padding:12px 18px; border-bottom:1px solid var(--line); background:var(--panel); gap:8px; flex-wrap:wrap; }
-  header h2 { margin:0; font-size:17px; }
-  header .sub { font-size:12px; color:var(--muted); }
+  header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--line); background:var(--panel); gap:10px; }
+  .head-left { display:flex; align-items:center; gap:10px; min-width:0; }
+  header h2 { margin:0; font-size:16px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  header .sub { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .head-actions { display:flex; gap:6px; flex:none; }
+  .head-actions button { padding:8px 11px; font-size:13px; }
+  .back { display:none; }
+
   #screenArea { background:#000; display:flex; flex-direction:column; }
   #screenArea.hidden { display:none; }
-  #screenBar { padding:8px 12px; background:var(--panel); display:flex; gap:8px; align-items:center; font-size:14px; flex-wrap:wrap; }
-  #videos { display:flex; flex-wrap:wrap; gap:8px; padding:8px; max-height:45vh; overflow:auto; }
-  #videos video { width:100%; max-height:42vh; background:#111; border-radius:10px; }
-  #messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:8px; }
-  .empty { margin:auto; color:var(--muted); text-align:center; }
-  .msg { max-width:70%; padding:9px 12px; border-radius:14px; background:var(--other); align-self:flex-start; word-wrap:break-word; }
-  .msg.mine { background:var(--mine); color:#fff; align-self:flex-end; }
-  .msg .name { font-size:12px; opacity:.7; margin-bottom:3px; font-weight:600; }
-  .msg .text { white-space:pre-wrap; }
-  .msg img { max-width:260px; max-height:260px; border-radius:10px; display:block; margin-top:6px; cursor:pointer; }
-  .msg .time { font-size:11px; opacity:.6; margin-top:4px; text-align:right; }
-  #composer { display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); background:var(--panel); align-items:center; }
-  #composer input[type=text] { flex:1; min-width:0; }
-  #composer label.attach { background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; cursor:pointer; }
+  #screenBar { padding:8px 12px; background:var(--panel); display:flex; gap:8px; align-items:center; font-size:13px; flex-wrap:wrap; }
+  #screenBar select { width:auto; padding:7px 10px; font-size:13px; }
+  #videos { display:flex; flex-wrap:wrap; gap:8px; padding:8px; max-height:40vh; overflow:auto; }
+  #videos video { width:100%; max-height:38vh; background:#111; border-radius:12px; }
+
+  /* konuşma odası */
+  #voicePanel { margin:10px 12px 0; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px; box-shadow:var(--shadow); }
+  .voice-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+  .voice-head strong { font-size:14px; }
+  .live { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--ok); }
+  .live::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 0 rgba(48,164,108,.6); animation:pulse 1.6s infinite; }
+  @keyframes pulse { 70% { box-shadow:0 0 0 8px rgba(48,164,108,0); } 100% { box-shadow:0 0 0 0 rgba(48,164,108,0); } }
+  #voiceList { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; max-height:240px; overflow:auto; }
+  .participant { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:14px; background:var(--panel2); }
+  .participant .avatar { position:relative; transition:box-shadow .15s; }
+  .participant.speaking .avatar { box-shadow:0 0 0 3px var(--ok); }
+  .pinfo { min-width:0; flex:1; }
+  .pname { font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .pstate { font-size:12px; color:var(--muted); }
+  .pvol { width:90px; flex:none; }
+  .voice-controls { display:flex; flex-wrap:wrap; gap:8px; }
+  .voice-controls button { flex:1 1 auto; padding:10px; font-size:13px; }
+  .voice-settings { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); display:grid; gap:10px; }
+  .voice-settings label { font-size:13px; color:var(--muted); display:grid; gap:6px; }
+  .voice-settings .row { display:flex; align-items:center; gap:8px; color:var(--text); font-size:13px; }
+
+  /* mesajlar */
+  #messages { flex:1; overflow-y:auto; padding:16px 16px 8px; display:flex; flex-direction:column; gap:6px; scroll-behavior:smooth; }
+  .empty { margin:auto; color:var(--muted); text-align:center; padding:30px; }
+  .empty .big { font-size:40px; margin-bottom:8px; }
+  .msg-row { display:flex; gap:8px; align-items:flex-end; }
+  .msg-row.mine { justify-content:flex-end; }
+  .msg { max-width:72%; padding:9px 13px; border-radius:18px; background:var(--other); position:relative; word-wrap:break-word; box-shadow:0 1px 2px rgba(0,0,0,.12); }
+  .msg.mine { background:var(--mine); color:#fff; border-bottom-right-radius:6px; }
+  .msg:not(.mine) { border-bottom-left-radius:6px; }
+  .msg .name { font-size:12px; opacity:.75; margin-bottom:2px; font-weight:600; }
+  .msg .text { white-space:pre-wrap; line-height:1.4; font-size:15px; }
+  .msg img { max-width:260px; max-height:260px; border-radius:12px; display:block; margin-top:6px; cursor:pointer; }
+  .msg .meta { font-size:11px; opacity:.65; margin-top:4px; display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+  .msg .del { background:none; color:inherit; padding:0 2px; font-size:12px; border-radius:6px; opacity:.7; }
+  .msg .del:hover { opacity:1; background:rgba(255,255,255,.12); }
+  #composer { display:flex; gap:8px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); background:var(--panel); align-items:center; }
+  #composer input[type=text] { flex:1; min-width:0; border-radius:22px; padding:12px 16px; }
+  #composer label.attach { width:44px; height:44px; border-radius:50%; background:var(--panel2); border:1px solid var(--line); display:grid; place-items:center; cursor:pointer; font-size:18px; flex:none; }
   #composer input[type=file] { display:none; }
-  #preview { font-size:13px; color:var(--muted); padding:0 14px 8px; background:var(--panel); }
+  #composer button#sendBtn { border-radius:22px; padding:12px 18px; flex:none; }
+  #preview { font-size:13px; color:var(--muted); padding:0 16px 8px; background:var(--panel); }
 
   /* modal */
-  .modal { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:10; }
-  .modal .card { width:380px; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.55); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; z-index:10; padding:16px; }
+  .modal .card { max-width:400px; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; }
-  .chip { background:var(--accent); color:#fff; padding:4px 10px; border-radius:20px; font-size:13px; cursor:pointer; }
-  .results div { padding:8px 10px; border-radius:8px; cursor:pointer; }
+  .chip { background:var(--accent); color:#fff; padding:5px 11px; border-radius:20px; font-size:13px; cursor:pointer; }
+  .results div { padding:9px 11px; border-radius:10px; cursor:pointer; }
   .results div:hover { background:var(--panel2); }
 
-  @media (max-width: 760px) {
+  /* mobil */
+  @media (max-width: 820px) {
     #app { grid-template-columns: 1fr; }
-    aside { display:none; }
-    aside.show { display:flex; position:fixed; inset:0; z-index:5; width:100%; }
-    .msg { max-width:88%; }
+    aside { border-right:none; }
+    main { display:none; }
+    body.chat-open aside { display:none; }
+    body.chat-open main { display:flex; }
+    .back { display:inline-flex; }
+    .msg { max-width:84%; }
+    .head-actions button { padding:8px 9px; font-size:12px; }
+    #voicePanel { margin:8px 8px 0; }
+    input, select { font-size:16px; }
   }
 </style>
 </head>
 <body>
 
-<!-- Giriş / Kayıt -->
+<!-- Giriş -->
 <div id="auth">
   <div class="card">
+    <div class="brand-logo"><div><span></span><span></span></div></div>
     <h1>GridChat</h1>
     <p class="sub">Mesajlaşmak için hesap oluşturun ya da giriş yapın.</p>
     <div class="tabs">
@@ -115,13 +179,16 @@
 
 <!-- Uygulama -->
 <div id="app" class="hidden">
-  <aside id="sidebar">
+  <aside>
     <div class="brand">
-      <div>
-        <strong>GridChat</strong>
-        <div class="me" id="whoami"></div>
+      <div class="brand-left">
+        <div class="brand-mark"><div><span></span><span></span></div></div>
+        <div style="min-width:0;">
+          <strong>GridChat</strong>
+          <div class="me" id="whoami"></div>
+        </div>
       </div>
-      <button class="ghost" onclick="logout()" style="padding:6px 10px;">Çıkış</button>
+      <button class="ghost icon" onclick="logout()" title="Çıkış">⎋</button>
     </div>
     <div class="side-actions">
       <button onclick="openDirectModal()">+ Birebir</button>
@@ -130,26 +197,30 @@
     <div id="convList"></div>
     <div class="side-footer">
       <select id="themeSelect" onchange="setTheme(this.value)">
-        <option value="dark">Koyu</option>
-        <option value="light">Açık</option>
+        <option value="dark">Koyu tema</option>
+        <option value="light">Açık tema</option>
         <option value="ocean">Okyanus</option>
         <option value="forest">Orman</option>
       </select>
-      <button class="ghost" id="installBtn" style="display:none; padding:7px 10px; font-size:13px;">Yükle</button>
+      <button class="ghost" id="installBtn" style="display:none; padding:8px 10px; font-size:13px;">Yükle</button>
       <span class="me" id="online"></span>
     </div>
   </aside>
 
   <main>
     <header>
-      <div>
-        <h2 id="chatTitle">Bir sohbet seçin</h2>
-        <div class="sub" id="chatSub"></div>
+      <div class="head-left">
+        <button class="ghost icon back" onclick="closeChatMobile()" title="Geri">←</button>
+        <div style="min-width:0;">
+          <h2 id="chatTitle">Bir sohbet seçin</h2>
+          <div class="sub" id="chatSub"></div>
+        </div>
       </div>
-      <div style="display:flex; gap:8px;">
-        <button class="ghost" id="callBtn" onclick="toggleCall()" style="display:none;">Sesli arama</button>
-        <button class="ghost" id="shareBtn" onclick="toggleShare()">Ekranı paylaş</button>
-        <button class="ghost" id="adminBtn" class="hidden" onclick="openAdmin()" style="display:none;">Yönetici</button>
+      <div class="head-actions">
+        <button class="ghost" id="callBtn" onclick="toggleVoice()" style="display:none;">Konuşma odası</button>
+        <button class="ghost" id="shareBtn" onclick="toggleShare()" style="display:none;">Ekran</button>
+        <button class="ghost" id="delConvBtn" onclick="deleteCurrentConversation()" style="display:none;" title="Sohbeti sil">🗑</button>
+        <button class="ghost" id="adminBtn" onclick="openAdmin()" style="display:none;">Yönetici</button>
       </div>
     </header>
 
@@ -162,7 +233,38 @@
       <div id="videos"></div>
     </section>
 
-    <div id="messages"><div class="empty">Soldan bir sohbet seçin ya da yeni bir sohbet başlatın.</div></div>
+    <section id="voicePanel" class="hidden">
+      <div class="voice-head">
+        <div>
+          <strong id="voiceTitle">Konuşma odası</strong>
+        </div>
+        <span class="live">Bağlı</span>
+      </div>
+      <div id="voiceList"></div>
+      <div class="voice-controls">
+        <button id="voiceMicBtn" class="ghost" onclick="toggleMic()">🎙️ Mikrofon açık</button>
+        <button id="voiceDeafBtn" class="ghost" onclick="toggleDeafen()">🔊 Hoparlör açık</button>
+        <button class="ghost" onclick="toggleVoiceSettings()">⚙️ Ayarlar</button>
+        <button class="danger" onclick="leaveVoice()">Odadan çık</button>
+      </div>
+      <div id="voiceSettings" class="voice-settings hidden">
+        <label>Mikrofon
+          <select id="micSelect" onchange="onMicDeviceChange(this.value)"></select>
+        </label>
+        <label>Hoparlör
+          <select id="spkSelect" onchange="onSpeakerChange(this.value)"></select>
+        </label>
+        <label>Mikrofon sesi: <span id="micVolLabel"></span>
+          <input type="range" id="micVol" min="0" max="200" step="5" oninput="onMicVolume(this.value)">
+        </label>
+        <div class="row"><input type="checkbox" id="optNoise" onchange="onVoiceOption('noiseSuppression', this.checked)"> Gürültü engelleme</div>
+        <div class="row"><input type="checkbox" id="optEcho" onchange="onVoiceOption('echoCancellation', this.checked)"> Yankı önleme</div>
+        <div class="row"><input type="checkbox" id="optGain" onchange="onVoiceOption('autoGain', this.checked)"> Otomatik ses kazancı</div>
+        <div class="notice">Gürültü engelleme ve yankı önleme değişince mikrofon yeniden açılır. Kulaklık kullanmak yankıyı büyük ölçüde önler.</div>
+      </div>
+    </section>
+
+    <div id="messages"><div class="empty"><div class="big">💬</div>Soldan bir sohbet seçin ya da yeni bir sohbet başlatın.</div></div>
     <div id="preview" class="hidden"></div>
     <form id="composer" onsubmit="sendMessage(event)">
       <label class="attach" title="Fotoğraf ekle">📷<input type="file" id="photo" accept="image/png,image/jpeg,image/gif,image/webp" onchange="onPhotoPicked(event)"></label>
@@ -172,25 +274,24 @@
   </main>
 </div>
 
-<!-- Modal: birebir -->
+<!-- Birebir -->
 <div id="directModal" class="modal hidden" onclick="if(event.target===this)closeModal('directModal')">
   <div class="card">
-    <h1 style="font-size:18px;">Birebir sohbet</h1>
+    <h1 style="font-size:19px;">Birebir sohbet</h1>
     <input id="searchUser" placeholder="Kullanıcı adı ara" oninput="searchUsers(this.value)">
     <div class="results" id="searchResults"></div>
-    <div class="notice">Listeden birini seçin ya da tam kullanıcı adını yazıp Aç'a basın.</div>
     <div style="display:flex; gap:8px;">
-      <input id="directName" placeholder="Kullanıcı adı" style="flex:1;">
+      <input id="directName" placeholder="Tam kullanıcı adı">
       <button onclick="openDirect(document.getElementById('directName').value)">Aç</button>
     </div>
     <button class="ghost" onclick="closeModal('directModal')">Kapat</button>
   </div>
 </div>
 
-<!-- Modal: grup -->
+<!-- Grup -->
 <div id="groupModal" class="modal hidden" onclick="if(event.target===this)closeModal('groupModal')">
   <div class="card">
-    <h1 style="font-size:18px;">Yeni grup</h1>
+    <h1 style="font-size:19px;">Yeni grup</h1>
     <input id="groupName" placeholder="Grup adı" maxlength="50">
     <input id="groupSearch" placeholder="Kullanıcı adı ara ve ekle" oninput="searchGroupUsers(this.value)">
     <div class="results" id="groupResults"></div>
@@ -202,12 +303,12 @@
   </div>
 </div>
 
-<!-- Modal: yönetici -->
+<!-- Yönetici -->
 <div id="adminModal" class="modal hidden" onclick="if(event.target===this)closeModal('adminModal')">
-  <div class="card" style="width:min(720px,92vw); max-height:85vh; overflow:auto;">
-    <h1 style="font-size:18px;">Yönetici paneli</h1>
+  <div class="card" style="max-width:720px; width:100%; max-height:85vh; overflow:auto;">
+    <h1 style="font-size:19px;">Yönetici paneli</h1>
     <div class="notice">Hesaplar</div>
-    <div id="adminUsers" style="font-size:14px; line-height:1.7;"></div>
+    <div id="adminUsers" style="font-size:14px; line-height:1.8;"></div>
     <div class="notice">Son mesajlar (şifresi çözülmüş)</div>
     <div id="adminMessages" style="font-size:14px; line-height:1.5;"></div>
     <button class="ghost" onclick="closeModal('adminModal')">Kapat</button>
@@ -216,19 +317,17 @@
 
 <script>
 const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const AVATAR_COLORS = ['#5b8cff', '#e5484d', '#30a46c', '#f5a524', '#8e5cff', '#14b8a6', '#ec4899'];
+
 let token = localStorage.getItem('token');
 let me = null;
 let socket = null;
-let current = null;           // aktif sohbet
+let current = null;
 let conversations = [];
 let pendingImage = null;
-let localStream = null;
-const sharerPeers = new Map();
-let viewerPc = null;
-let watchingId = null;
-const sharers = new Map();
 let groupPick = [];
-const RTC_CONFIG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 // ---------- Tema ----------
 function setTheme(t) {
@@ -238,7 +337,19 @@ function setTheme(t) {
 }
 setTheme(localStorage.getItem('theme') || 'dark');
 
-// ---------- Ağ ----------
+// ---------- Yardımcılar ----------
+function avatar(name, size) {
+  const d = document.createElement('div');
+  d.className = 'avatar';
+  let h = 0;
+  for (const ch of String(name)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  d.style.background = AVATAR_COLORS[h % AVATAR_COLORS.length];
+  if (size) { d.style.width = size + 'px'; d.style.height = size + 'px'; }
+  d.textContent = String(name).replace(/^@/, '').slice(0, 2).toUpperCase();
+  return d;
+}
+function closeModal(id) { $(id).classList.add('hidden'); }
+
 async function api(url, opts = {}) {
   const isForm = opts.body instanceof FormData;
   const res = await fetch(url, {
@@ -252,7 +363,6 @@ async function api(url, opts = {}) {
   if (!res.ok) throw new Error(data.error || 'Bir hata oluştu');
   return data;
 }
-function closeModal(id) { $(id).classList.add('hidden'); }
 
 // ---------- Giriş ----------
 function switchTab(tab) {
@@ -277,11 +387,11 @@ async function submitAuth() {
   } catch (e) { $('authError').textContent = e.message; }
 }
 async function logout() {
+  if (callConv) leaveVoice();
   try { await api('/api/logout', { method: 'POST' }); } catch (e) {}
   localStorage.removeItem('token');
   location.reload();
 }
-
 function start(user) {
   me = user;
   $('auth').classList.add('hidden');
@@ -302,36 +412,71 @@ function renderList() {
   const list = $('convList');
   list.innerHTML = '';
   if (!conversations.length) {
-    list.innerHTML = '<div class="notice" style="padding:12px;">Henüz sohbet yok. Birebir ya da grup başlatın.</div>';
+    list.innerHTML = '<div class="notice" style="padding:14px;">Henüz sohbet yok. Birebir ya da grup başlatın.</div>';
     return;
   }
   conversations.forEach(c => {
     const d = document.createElement('div');
     d.className = 'conv' + (current && current.id === c.id ? ' active' : '');
     d.onclick = () => openConversation(c);
-    d.innerHTML = '';
+    const label = c.type === 'group' ? c.title : c.title;
+    d.appendChild(avatar(label));
+    const body = document.createElement('div'); body.className = 'body';
     const t = document.createElement('div'); t.className = 't'; t.textContent = (c.type === 'group' ? '👥 ' : '') + c.title;
     const k = document.createElement('div'); k.className = 'k';
-    k.textContent = c.type === 'group' ? c.members.map(m => '@' + m).join(', ') : 'Birebir';
-    d.appendChild(t); d.appendChild(k);
+    k.textContent = c.type === 'group' ? c.members.map(m => '@' + m).join(', ') : 'Birebir sohbet';
+    body.appendChild(t); body.appendChild(k);
+    d.appendChild(body);
     list.appendChild(d);
   });
+}
+
+function setComposerEnabled(on) {
+  $('text').disabled = !on;
+  $('sendBtn').disabled = !on;
+}
+function updateHeaderButtons() {
+  const has = !!current;
+  $('callBtn').style.display = has ? '' : 'none';
+  $('shareBtn').style.display = has ? '' : 'none';
+  $('delConvBtn').style.display = has ? '' : 'none';
+  if (has) {
+    const here = callConv === current.id;
+    $('callBtn').textContent = here ? 'Odada' : (callConv ? 'Odaya geç' : 'Konuşma odası');
+    $('callBtn').className = here ? 'danger' : 'ghost';
+  }
 }
 
 async function openConversation(c) {
   current = c;
   renderList();
   $('chatTitle').textContent = (c.type === 'group' ? '👥 ' : '') + c.title;
-  $('chatSub').textContent = c.type === 'group' ? c.members.map(m => '@' + m).join(', ') : '';
-  $('text').disabled = false;
-  $('sendBtn').disabled = false;
-  updateCallBtn();
+  $('chatSub').textContent = c.type === 'group' ? c.members.map(m => '@' + m).join(', ') : '@' + c.title;
+  setComposerEnabled(true);
+  updateHeaderButtons();
   socket.emit('join:conversation', c.id);
+  document.body.classList.add('chat-open');
   const { messages } = await api(`/api/conversations/${c.id}/messages`);
   $('messages').innerHTML = '';
-  if (!messages.length) $('messages').innerHTML = '<div class="empty">Henüz mesaj yok. İlk mesajı siz yazın.</div>';
+  if (!messages.length) showEmpty('Henüz mesaj yok. İlk mesajı siz yazın.');
   messages.forEach(appendMessage);
-  $('sidebar').classList.remove('show');
+  $('messages').scrollTop = $('messages').scrollHeight;
+}
+function showEmpty(text) {
+  $('messages').innerHTML = '<div class="empty"><div class="big">💬</div>' + esc(text) + '</div>';
+}
+function closeChatMobile() {
+  document.body.classList.remove('chat-open');
+}
+function resetChat() {
+  current = null;
+  $('chatTitle').textContent = 'Bir sohbet seçin';
+  $('chatSub').textContent = '';
+  setComposerEnabled(false);
+  updateHeaderButtons();
+  showEmpty('Soldan bir sohbet seçin ya da yeni bir sohbet başlatın.');
+  closeChatMobile();
+  renderList();
 }
 
 // ---------- Socket ----------
@@ -342,9 +487,16 @@ function connectSocket() {
     if (current && m.conversationId === current.id) {
       if ($('messages').querySelector('.empty')) $('messages').innerHTML = '';
       appendMessage(m);
+      $('messages').scrollTop = $('messages').scrollHeight;
     } else {
       loadConversations();
     }
+  });
+  socket.on('message:deleted', ({ id }) => removeMessageEl(id));
+  socket.on('conversation:deleted', ({ id }) => {
+    if (callConv === id) leaveVoice();
+    if (current && current.id === id) resetChat();
+    loadConversations();
   });
   socket.on('conversations:changed', loadConversations);
   socket.on('presence', n => { $('online').textContent = n + ' çevrimiçi'; });
@@ -356,29 +508,73 @@ function connectSocket() {
   });
   socket.on('screen:viewer', onViewerJoined);
   socket.on('webrtc:signal', onSignal);
-  registerCall();
+  registerVoice();
 }
 
 // ---------- Mesajlar ----------
 function appendMessage(m) {
   const mine = me && m.userId === me.id;
+  const row = document.createElement('div');
+  row.className = 'msg-row' + (mine ? ' mine' : '');
+  row.dataset.id = m.id;
+  if (!mine) row.appendChild(avatar(m.from, 30));
   const div = document.createElement('div');
   div.className = 'msg' + (mine ? ' mine' : '');
-  const name = document.createElement('div'); name.className = 'name'; name.textContent = '@' + m.from;
-  div.appendChild(name);
+  if (!mine) {
+    const name = document.createElement('div'); name.className = 'name'; name.textContent = '@' + m.from;
+    div.appendChild(name);
+  }
   if (m.text) {
     const t = document.createElement('div'); t.className = 'text'; t.textContent = m.text; div.appendChild(t);
   }
   if (m.image) {
     const img = document.createElement('img'); img.src = m.image; img.alt = 'fotoğraf';
+    img.loading = 'lazy';
     img.onclick = () => window.open(m.image, '_blank'); div.appendChild(img);
   }
-  const time = document.createElement('div'); time.className = 'time';
+  const meta = document.createElement('div'); meta.className = 'meta';
+  const time = document.createElement('span');
   time.textContent = new Date(m.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-  div.appendChild(time);
-  $('messages').appendChild(div);
-  $('messages').scrollTop = $('messages').scrollHeight;
+  meta.appendChild(time);
+  if (mine || (me && me.is_admin)) {
+    const del = document.createElement('button');
+    del.className = 'del'; del.textContent = 'Sil'; del.title = 'Mesajı sil';
+    del.onclick = () => deleteMessage(m.id);
+    meta.appendChild(del);
+  }
+  div.appendChild(meta);
+  row.appendChild(div);
+  $('messages').appendChild(row);
 }
+function removeMessageEl(id) {
+  const el = document.querySelector(`.msg-row[data-id="${id}"]`);
+  if (el) el.remove();
+  if (!$('messages').children.length) showEmpty('Henüz mesaj yok.');
+}
+async function deleteMessage(id) {
+  if (!confirm('Bu mesaj silinsin mi? Bu işlem geri alınamaz.')) return;
+  try {
+    await api('/api/messages/' + id, { method: 'DELETE' });
+    removeMessageEl(id);
+  } catch (e) { alert(e.message); }
+}
+async function deleteCurrentConversation() {
+  if (!current) return;
+  const group = current.type === 'group';
+  const creatorOrAdmin = group && (me.is_admin || current.createdByMe);
+  const msg = group
+    ? (creatorOrAdmin ? 'Bu grup ve tüm mesajları silinsin mi? Geri alınamaz.' : 'Bu gruptan ayrılıp sohbeti listenizden kaldırmak istiyor musunuz?')
+    : 'Bu birebir sohbet listenizden kaldırılsın mı? Karşı taraf sohbeti görmeye devam eder.';
+  if (!confirm(msg)) return;
+  try {
+    const id = current.id;
+    if (callConv === id) leaveVoice();
+    await api('/api/conversations/' + id, { method: 'DELETE' });
+    resetChat();
+    await loadConversations();
+  } catch (e) { alert(e.message); }
+}
+
 async function onPhotoPicked(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -478,7 +674,7 @@ async function openAdmin() {
   $('adminModal').classList.remove('hidden');
   const { users } = await api('/api/admin/users');
   $('adminUsers').innerHTML = users.map(u =>
-    `@${u.username} ${u.is_admin ? '(yönetici)' : ''} — ${new Date(u.created_at).toLocaleString('tr-TR')}`
+    `@${esc(u.username)} ${u.is_admin ? '(yönetici)' : ''} — ${new Date(u.created_at).toLocaleString('tr-TR')}`
   ).join('<br>') || 'Hesap yok';
   const { messages } = await api('/api/admin/messages');
   const box = $('adminMessages'); box.innerHTML = '';
@@ -492,22 +688,28 @@ async function openAdmin() {
 }
 
 // ---------- Ekran paylaşımı ----------
+const sharers = new Map();
+let localStream = null;
+const sharerPeers = new Map();
+let viewerPc = null;
+let watchingId = null;
+
 function renderSharers() {
   const select = $('sharerSelect');
-  const current = select.value;
+  const cur = select.value;
   select.innerHTML = '<option value="">Paylaşımı seç...</option>';
   sharers.forEach((username, id) => {
     if (id === socket.id) return;
     const o = document.createElement('option'); o.value = id; o.textContent = username + ' ekranı';
     select.appendChild(o);
   });
-  if ([...sharers.keys()].includes(current)) select.value = current;
-  const mineSharing = sharers.has(socket.id);
-  $('shareBtn').textContent = mineSharing ? 'Paylaşımı durdur' : 'Ekranı paylaş';
-  $('shareBtn').className = mineSharing ? 'danger' : 'ghost';
-  const anyone = sharers.size > 0 || mineSharing;
+  if ([...sharers.keys()].includes(cur)) select.value = cur;
+  const mine = sharers.has(socket.id);
+  $('shareBtn').textContent = mine ? 'Durdur' : 'Ekran';
+  $('shareBtn').className = mine ? 'danger' : 'ghost';
+  const anyone = sharers.size > 0 || mine;
   $('screenArea').classList.toggle('hidden', !anyone);
-  $('screenStatus').textContent = mineSharing ? 'Ekranınız paylaşılıyor' : (sharers.size ? 'Bir ekran paylaşımı var' : 'Ekran paylaşımı yok');
+  $('screenStatus').textContent = mine ? 'Ekranınız paylaşılıyor' : (sharers.size ? 'Bir ekran paylaşımı var' : 'Ekran paylaşımı yok');
 }
 function joinSelected() {
   const id = $('sharerSelect').value;
@@ -584,83 +786,245 @@ async function onSignal({ from, data }) {
   if (data.candidate) await viewerPc.addIceCandidate(data.candidate);
 }
 
-// ---------- Sesli arama (sohbet başına, WebRTC ses) ----------
-let callConv = null;
-let micStream = null;
-const callPeers = new Map();
-const callAudio = new Map();
+// ---------- Konuşma odası (sesli sohbet) ----------
+const DEFAULT_VOICE = { micVolume: 100, noiseSuppression: true, echoCancellation: true, autoGain: true, micDeviceId: '', speakerDeviceId: '' };
+let voiceSettings = Object.assign({}, DEFAULT_VOICE, JSON.parse(localStorage.getItem('voiceSettings') || '{}'));
+function saveVoice() { localStorage.setItem('voiceSettings', JSON.stringify(voiceSettings)); }
 
-function updateCallBtn() {
-  const b = $('callBtn');
-  if (!current) { b.style.display = 'none'; return; }
-  b.style.display = '';
-  const here = callConv === current.id;
-  b.textContent = here ? 'Aramadan çık' : (callConv ? 'Sesli arama (başka sohbette açık)' : 'Sesli arama');
-  b.className = here ? 'danger' : 'ghost';
+let callConv = null;              // şu an bağlı olduğumuz sohbet
+let selfMuted = false;
+let selfDeafened = false;
+let audioCtx = null;
+let micGain = null, outDest = null, outTrack = null, localAnalyser = null;
+let micRaw = null, micNode = null;
+const callPeers = new Map();      // socketId -> RTCPeerConnection
+const callUsers = new Map();      // socketId -> { username, muted, deafened, volume, audio, analyser }
+let levelTimer = null;
+
+function ensureUser(id) {
+  if (!callUsers.has(id)) callUsers.set(id, { username: '…', muted: false, deafened: false, volume: 1, audio: null, analyser: null });
+  return callUsers.get(id);
 }
-async function toggleCall() {
-  if (!current) return;
-  if (callConv === current.id) return leaveCall();
-  if (callConv) leaveCall();
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  } catch (e) {
-    return alert('Mikrofon izni verilmedi: ' + e.message);
+
+function ensureAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    micGain = audioCtx.createGain();
+    outDest = audioCtx.createMediaStreamDestination();
+    micGain.connect(outDest);
+    outTrack = outDest.stream.getAudioTracks()[0];
+    localAnalyser = audioCtx.createAnalyser();
+    localAnalyser.fftSize = 512;
+    micGain.connect(localAnalyser);
   }
-  callConv = current.id;
-  socket.emit('call:join', current.id);
-  updateCallBtn();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  micGain.gain.value = voiceSettings.micVolume / 100;
 }
-function leaveCall() {
+
+async function acquireMic() {
+  if (micRaw) micRaw.getTracks().forEach(t => t.stop());
+  const base = {
+    echoCancellation: voiceSettings.echoCancellation,
+    noiseSuppression: voiceSettings.noiseSuppression,
+    autoGainControl: voiceSettings.autoGain
+  };
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: voiceSettings.micDeviceId ? { ...base, deviceId: { exact: voiceSettings.micDeviceId } } : base,
+      video: false
+    });
+  } catch (e) {
+    // Seçili mikrofon bulunamazsa varsayılan mikrofona dön
+    voiceSettings.micDeviceId = '';
+    saveVoice();
+    stream = await navigator.mediaDevices.getUserMedia({ audio: base, video: false });
+  }
+  micRaw = stream;
+  ensureAudio();
+  if (micNode) micNode.disconnect();
+  micNode = audioCtx.createMediaStreamSource(micRaw);
+  micNode.connect(micGain);
+  if (outTrack) outTrack.enabled = !selfMuted;
+  populateDevices();
+}
+
+async function joinVoice() {
+  if (!current) return;
+  if (callConv && callConv !== current.id) leaveVoice();
+  if (callConv === current.id) return;
+  try {
+    await acquireMic();
+  } catch (e) {
+    return alert('Mikrofon açılamadı: ' + e.message);
+  }
+  ensureAudio();
+  callConv = current.id;
+  selfMuted = false;
+  selfDeafened = false;
+  outTrack.enabled = true;
+  socket.emit('call:join', current.id);
+  startLevelLoop();
+  renderVoice();
+  updateHeaderButtons();
+}
+function toggleVoice() {
+  if (!current) return;
+  if (callConv === current.id) return leaveVoice();
+  joinVoice();
+}
+
+function leaveVoice() {
+  if (!callConv) return;
   socket.emit('call:leave');
   callPeers.forEach(pc => pc.close());
   callPeers.clear();
-  callAudio.forEach(a => a.remove());
-  callAudio.clear();
-  if (micStream) micStream.getTracks().forEach(t => t.stop());
-  micStream = null;
+  callUsers.forEach(u => { if (u.audio) u.audio.remove(); });
+  callUsers.clear();
+  if (micRaw) micRaw.getTracks().forEach(t => t.stop());
+  micRaw = null;
+  if (micNode) { micNode.disconnect(); micNode = null; }
   callConv = null;
-  updateCallBtn();
+  stopLevelLoop();
+  renderVoice();
+  updateHeaderButtons();
 }
+
+function toggleMic() {
+  selfMuted = !selfMuted;
+  if (outTrack) outTrack.enabled = !selfMuted;
+  socket.emit('call:state', { muted: selfMuted, deafened: selfDeafened });
+  renderVoice();
+}
+function toggleDeafen() {
+  selfDeafened = !selfDeafened;
+  callUsers.forEach(u => { if (u.audio) u.audio.muted = selfDeafened; });
+  socket.emit('call:state', { muted: selfMuted, deafened: selfDeafened });
+  renderVoice();
+}
+function toggleVoiceSettings() {
+  const box = $('voiceSettings');
+  box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden')) syncSettingsControls();
+}
+function syncSettingsControls() {
+  $('micVol').value = voiceSettings.micVolume;
+  $('micVolLabel').textContent = voiceSettings.micVolume + '%';
+  $('optNoise').checked = voiceSettings.noiseSuppression;
+  $('optEcho').checked = voiceSettings.echoCancellation;
+  $('optGain').checked = voiceSettings.autoGain;
+  populateDevices();
+}
+async function populateDevices() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  try {
+    const devs = await navigator.mediaDevices.enumerateDevices();
+    fillSelect($('micSelect'), devs.filter(d => d.kind === 'audioinput'), voiceSettings.micDeviceId, 'Varsayılan mikrofon');
+    const spk = devs.filter(d => d.kind === 'audiooutput');
+    fillSelect($('spkSelect'), spk, voiceSettings.speakerDeviceId, 'Varsayılan hoparlör');
+    $('spkSelect').disabled = !('setSinkId' in HTMLMediaElement.prototype);
+  } catch (e) {}
+}
+function fillSelect(sel, devices, selected, defaultLabel) {
+  sel.innerHTML = '';
+  const def = document.createElement('option'); def.value = ''; def.textContent = defaultLabel;
+  sel.appendChild(def);
+  devices.forEach((d, i) => {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.textContent = d.label || ('Cihaz ' + (i + 1));
+    sel.appendChild(o);
+  });
+  sel.value = selected || '';
+}
+async function onMicDeviceChange(id) {
+  voiceSettings.micDeviceId = id;
+  saveVoice();
+  if (callConv) { try { await acquireMic(); } catch (e) { alert(e.message); } }
+}
+function onSpeakerChange(id) {
+  voiceSettings.speakerDeviceId = id;
+  saveVoice();
+  applySpeaker();
+}
+function applySpeaker() {
+  callUsers.forEach(u => {
+    if (u.audio && u.audio.setSinkId && voiceSettings.speakerDeviceId) {
+      u.audio.setSinkId(voiceSettings.speakerDeviceId).catch(() => {});
+    }
+  });
+}
+function onMicVolume(v) {
+  voiceSettings.micVolume = Number(v);
+  $('micVolLabel').textContent = v + '%';
+  if (micGain) micGain.gain.value = Number(v) / 100;
+  saveVoice();
+}
+async function onVoiceOption(key, value) {
+  voiceSettings[key] = value;
+  saveVoice();
+  if (callConv) { try { await acquireMic(); } catch (e) { alert(e.message); } }
+}
+
 function makePeer(id) {
   const pc = new RTCPeerConnection(RTC_CONFIG);
   callPeers.set(id, pc);
-  micStream.getTracks().forEach(t => pc.addTrack(t, micStream));
+  pc.addTrack(outTrack, outDest.stream);
   pc.onicecandidate = e => {
     if (e.candidate) socket.emit('call:signal', { to: id, data: { candidate: e.candidate } });
   };
-  pc.ontrack = e => {
-    let a = callAudio.get(id);
-    if (!a) {
-      a = document.createElement('audio');
-      a.autoplay = true;
-      document.body.appendChild(a);
-      callAudio.set(id, a);
-    }
-    a.srcObject = e.streams[0];
-  };
+  pc.ontrack = e => attachRemote(id, e.streams[0]);
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') dropPeer(id);
   };
   return pc;
 }
+function attachRemote(id, stream) {
+  const u = ensureUser(id);
+  if (!u.audio) {
+    u.audio = document.createElement('audio');
+    u.audio.autoplay = true;
+    document.body.appendChild(u.audio);
+  }
+  u.audio.srcObject = stream;
+  u.audio.muted = selfDeafened;
+  u.audio.volume = u.volume;
+  if (voiceSettings.speakerDeviceId && u.audio.setSinkId) u.audio.setSinkId(voiceSettings.speakerDeviceId).catch(() => {});
+  ensureAudio();
+  const src = audioCtx.createMediaStreamSource(stream);
+  u.analyser = audioCtx.createAnalyser();
+  u.analyser.fftSize = 512;
+  src.connect(u.analyser);
+  renderVoice();
+}
 function dropPeer(id) {
   const pc = callPeers.get(id);
   if (pc) pc.close();
   callPeers.delete(id);
-  const a = callAudio.get(id);
-  if (a) a.remove();
-  callAudio.delete(id);
+  const u = callUsers.get(id);
+  if (u && u.audio) u.audio.remove();
+  callUsers.delete(id);
+  renderVoice();
 }
-async function onPeerJoined({ socketId }) {
-  if (!micStream || callPeers.has(socketId)) return;
+
+async function onPeerJoined({ socketId, username }) {
+  if (!callConv) return;
+  ensureUser(socketId).username = username;
+  // Yeni katılana mevcut durumumuzu bildir
+  socket.emit('call:state', { muted: selfMuted, deafened: selfDeafened });
+  if (callPeers.has(socketId)) return;
   const pc = makePeer(socketId);
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   socket.emit('call:signal', { to: socketId, data: { sdp: pc.localDescription } });
+  renderVoice();
+}
+function onCallPeers(list) {
+  list.forEach(p => { ensureUser(p.socketId).username = p.username; });
+  renderVoice();
 }
 async function onCallSignal({ from, data }) {
-  if (!micStream) return;
+  if (!callConv) return;
   const pc = callPeers.get(from) || makePeer(from);
   if (data.sdp) {
     await pc.setRemoteDescription(data.sdp);
@@ -674,15 +1038,94 @@ async function onCallSignal({ from, data }) {
     try { await pc.addIceCandidate(data.candidate); } catch (e) {}
   }
 }
-function registerCall() {
+function onCallState({ socketId, muted, deafened }) {
+  const u = ensureUser(socketId);
+  u.muted = muted;
+  u.deafened = deafened;
+  renderVoice();
+}
+
+function registerVoice() {
+  socket.on('call:peers', onCallPeers);
   socket.on('call:peer-joined', onPeerJoined);
   socket.on('call:peer-left', ({ socketId }) => dropPeer(socketId));
+  socket.on('call:state', onCallState);
   socket.on('call:signal', onCallSignal);
 }
 
+// Konuşma algılama: kendi mikrofonumuz ve diğer katılımcılar
+function levelOf(an) {
+  const buf = new Uint8Array(an.fftSize);
+  an.getByteTimeDomainData(buf);
+  let s = 0;
+  for (const v of buf) { const x = (v - 128) / 128; s += x * x; }
+  return Math.sqrt(s / buf.length);
+}
+function startLevelLoop() {
+  stopLevelLoop();
+  levelTimer = setInterval(() => {
+    if (!callConv) return;
+    const speakingSelf = !selfMuted && localAnalyser && levelOf(localAnalyser) > 0.04;
+    const selfRow = document.querySelector(`.participant[data-sid="self"]`);
+    if (selfRow) selfRow.classList.toggle('speaking', !!speakingSelf);
+    callUsers.forEach((u, id) => {
+      const row = document.querySelector(`.participant[data-sid="${id}"]`);
+      if (row && u.analyser) row.classList.toggle('speaking', levelOf(u.analyser) > 0.04);
+    });
+  }, 150);
+}
+function stopLevelLoop() {
+  if (levelTimer) clearInterval(levelTimer);
+  levelTimer = null;
+}
+
+function participantRow(sid, name, muted, deafened, isSelf, u) {
+  const row = document.createElement('div');
+  row.className = 'participant';
+  row.dataset.sid = sid;
+  row.appendChild(avatar(name, 36));
+  const info = document.createElement('div'); info.className = 'pinfo';
+  const nm = document.createElement('div'); nm.className = 'pname';
+  nm.textContent = name + (isSelf ? ' (sen)' : '');
+  const st = document.createElement('div'); st.className = 'pstate';
+  st.textContent = (muted ? '🎙️ Kapalı' : '🎙️ Açık') + (deafened ? '  ·  🔇 Sağır' : '');
+  info.appendChild(nm); info.appendChild(st);
+  row.appendChild(info);
+  if (!isSelf && u) {
+    const vol = document.createElement('input');
+    vol.type = 'range'; vol.min = 0; vol.max = 100; vol.value = Math.round(u.volume * 100);
+    vol.className = 'pvol'; vol.title = 'Bu kişinin ses seviyesi';
+    vol.oninput = () => {
+      u.volume = vol.value / 100;
+      if (u.audio) u.audio.volume = u.volume;
+    };
+    row.appendChild(vol);
+  }
+  return row;
+}
+
+function renderVoice() {
+  const panel = $('voicePanel');
+  if (!callConv) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+  const conv = conversations.find(c => c.id === callConv);
+  $('voiceTitle').textContent = 'Konuşma odası · ' + (conv ? conv.title : '');
+  const list = $('voiceList');
+  list.innerHTML = '';
+  const selfRow = participantRow('self', me.username, selfMuted, selfDeafened, true, null);
+  list.appendChild(selfRow);
+  callUsers.forEach((u, id) => list.appendChild(participantRow(id, u.username, u.muted, u.deafened, false, u)));
+  $('voiceMicBtn').textContent = selfMuted ? '🎙️ Mikrofon kapalı' : '🎙️ Mikrofon açık';
+  $('voiceMicBtn').className = selfMuted ? 'danger' : 'ghost';
+  $('voiceDeafBtn').textContent = selfDeafened ? '🔇 Sağır' : '🔊 Hoparlör açık';
+  $('voiceDeafBtn').className = selfDeafened ? 'danger' : 'ghost';
+  updateHeaderButtons();
+}
+
 // Sayfa açılışı
+switchTab('login');
+setComposerEnabled(false);
 (async () => {
-  switchTab('login');
   if (!token) return;
   try {
     const { user } = await api('/api/me');
@@ -692,27 +1135,23 @@ function registerCall() {
     token = null;
   }
 })();
-</script>
-<script>
+
+// Uygulama olarak yükleme ve servis çalışanı
 let deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredPrompt = e;
-  document.getElementById('installBtn').style.display = '';
+  $('installBtn').style.display = '';
 });
-document.getElementById('installBtn').addEventListener('click', async () => {
+$('installBtn').addEventListener('click', async () => {
   if (!deferredPrompt) return;
   deferredPrompt.prompt();
   await deferredPrompt.userChoice;
   deferredPrompt = null;
-  document.getElementById('installBtn').style.display = 'none';
+  $('installBtn').style.display = 'none';
 });
-window.addEventListener('appinstalled', () => {
-  document.getElementById('installBtn').style.display = 'none';
-});
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js');
-}
+window.addEventListener('appinstalled', () => { $('installBtn').style.display = 'none'; });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
 </script>
 </body>
 </html>

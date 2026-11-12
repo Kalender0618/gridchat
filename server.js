@@ -217,6 +217,7 @@ app.get('/api/conversations', auth, wrap(async (req, res) => {
     return {
       id: c.id,
       type: c.type,
+      createdByMe: c.created_by === req.user.id,
       title: c.type === 'group' ? c.name : others[0] || 'Bilinmeyen',
       members: members.filter(m => m.conversation_id === c.id).map(m => names[m.user_id])
     };
@@ -322,6 +323,16 @@ async function uploadImage(file) {
   return PUBLIC_BASE + name;
 }
 
+// Supabase Storage'daki bir fotoğrafı sil
+async function deleteStorageObject(url) {
+  if (!url || !url.startsWith(PUBLIC_BASE)) return;
+  const name = url.slice(PUBLIC_BASE.length);
+  await fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${name}`, {
+    method: 'DELETE',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
+  }).catch(() => {});
+}
+
 app.post('/api/upload', auth, (req, res) => {
   upload.single('photo')(req, res, async err => {
     try {
@@ -337,6 +348,57 @@ app.post('/api/upload', auth, (req, res) => {
 });
 
 // YÃ¶netici
+// Mesaj silme: gönderen kişi veya yönetici
+app.delete('/api/messages/:id', auth, wrap(async (req, res) => {
+  const id = req.params.id;
+  if (!UUID_RE.test(id)) return res.status(400).json({ error: 'Geçersiz mesaj' });
+  const rows = await sb('messages', { query: `?id=eq.${id}&select=*` });
+  const msg = rows[0];
+  if (!msg) return res.status(404).json({ error: 'Mesaj bulunamadı' });
+  if (msg.sender_id !== req.user.id && !req.user.is_admin)
+    return res.status(403).json({ error: 'Bu mesajı silemezsiniz' });
+  await sb('messages', { method: 'DELETE', query: `?id=eq.${id}` });
+  await deleteStorageObject(msg.image_path);
+  io.to('conv:' + msg.conversation_id).emit('message:deleted', { id, conversationId: msg.conversation_id });
+  res.json({ ok: true });
+}));
+
+// Sohbet silme.
+// Grup kurucusu ya da yönetici sohbeti tamamen siler.
+// Diğer kullanıcılar sohbeti yalnızca kendi listesinden kaldırır.
+app.delete('/api/conversations/:id', auth, wrap(async (req, res) => {
+  const convId = req.params.id;
+  if (!UUID_RE.test(convId)) return res.status(400).json({ error: 'Geçersiz sohbet' });
+  const convs = await sb('conversations', { query: `?id=eq.${convId}&select=*` });
+  const conv = convs[0];
+  if (!conv) return res.status(404).json({ error: 'Sohbet bulunamadı' });
+
+  const member = await isMember(convId, req.user.id);
+  if (!member && !req.user.is_admin) return res.status(403).json({ error: 'Bu sohbete erişiminiz yok' });
+
+  const wholeDelete = req.user.is_admin || (conv.type === 'group' && conv.created_by === req.user.id);
+  if (wholeDelete) {
+    const withImages = await sb('messages', { query: `?conversation_id=eq.${convId}&image_path=not.is.null&select=image_path` });
+    await Promise.all(withImages.map(m => deleteStorageObject(m.image_path)));
+    io.to('conv:' + convId).emit('conversation:deleted', { id: convId });
+    for (const sock of io.sockets.sockets.values()) sock.leave('conv:' + convId);
+    await sb('conversations', { method: 'DELETE', query: `?id=eq.${convId}` });
+    io.emit('conversations:changed');
+    return res.json({ ok: true, deleted: true });
+  }
+
+  await sb('conversation_members', { method: 'DELETE', query: `?conversation_id=eq.${convId}&user_id=eq.${req.user.id}` });
+  for (const sock of io.sockets.sockets.values()) {
+    if (sock.user && sock.user.id === req.user.id) {
+      sock.leave('conv:' + convId);
+      sock.emit('conversations:changed');
+    }
+  }
+  const left = await sb('conversation_members', { query: `?conversation_id=eq.${convId}&select=user_id` });
+  if (!left.length) await sb('conversations', { method: 'DELETE', query: `?id=eq.${convId}` });
+  res.json({ ok: true, deleted: false });
+}));
+
 app.get('/api/admin/users', auth, adminOnly, wrap(async (req, res) => {
   const users = await sb('users', { query: '?select=id,username,is_admin,created_at&order=created_at.asc' });
   res.json({ users });
@@ -446,6 +508,16 @@ io.on('connection', async socket => {
   socket.on('call:leave', () => leaveCall(socket));
 
   // Ses sinyalleri yalnızca aynı çağrı odasındaki kişiye iletilir
+  // Mikrofon ve hoparlör durumu (odadaki herkese)
+  socket.on('call:state', ({ muted, deafened }) => {
+    const convId = socket.callConv;
+    const room = convId && callRooms.get(convId);
+    if (!room) return;
+    for (const id of room.keys()) {
+      if (id !== socket.id) io.to(id).emit('call:state', { socketId: socket.id, muted: !!muted, deafened: !!deafened });
+    }
+  });
+
   socket.on('call:signal', ({ to, data }) => {
     const target = io.sockets.sockets.get(to);
     if (!target || !socket.callConv || target.callConv !== socket.callConv) return;
